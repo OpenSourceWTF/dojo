@@ -1,8 +1,8 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, copyFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
 export interface DownloadOptions {
-  source: string;    // "github:org/repo/path"
+  source: string;    // "github:org/repo/path" or "file:/path/to/skill.md"
   version?: string;  // commit hash or tag
   destPath: string;  // where to write
 }
@@ -37,6 +37,14 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
 }
 
 export async function downloadSkill(options: DownloadOptions): Promise<void> {
+  // Handle file: protocol for local files (useful for testing)
+  if (options.source.startsWith('file:')) {
+    const filePath = options.source.replace(/^file:/, '');
+    await mkdir(dirname(options.destPath), { recursive: true });
+    await copyFile(filePath, options.destPath);
+    return;
+  }
+
   const { owner, repo, path: srcPath } = parseSource(options.source);
   const version = options.version || 'main';
 
@@ -82,3 +90,4 @@ export async function downloadSkill(options: DownloadOptions): Promise<void> {
 
   throw new Error(`Failed to download resource from ${rawUrl} or list directory via API.`);
 }
+

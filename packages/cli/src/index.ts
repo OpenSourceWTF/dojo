@@ -25,7 +25,7 @@ program.command('search')
 
 program.command('list')
   .description('List installed skills')
-  .action(list);
+  .action(() => list());
 
 program.command('sync')
   .description('Sync skills across agent formats')
@@ -35,6 +35,7 @@ program.command('sync')
 program.command('unlearn')
   .description('Remove a skill')
   .argument('<skill>', 'Skill name to remove')
-  .action(unlearn);
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action((skill, options) => unlearn(skill, options));
 
 program.parse();
