@@ -35,6 +35,7 @@ program.command('sync')
 program.command('unlearn')
   .description('Remove a skill')
   .argument('<skill>', 'Skill name to remove')
+  .option('-y, --yes', 'Skip confirmation')
   .action(unlearn);
 
 program.parse();

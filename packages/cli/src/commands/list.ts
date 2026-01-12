@@ -44,8 +44,10 @@ export function getInstalledSkills(projectRoot: string): InstalledSkills {
 
 /**
  * List installed skills per agent.
+ * Note: When called from Commander, the first argument is options object.
  */
-export async function list(projectRoot: string = process.cwd()): Promise<void> {
+export async function list(options?: any): Promise<void> {
+  const projectRoot = process.cwd();
   const skills = getInstalledSkills(projectRoot);
 
   console.log('Installed Skills:\n');

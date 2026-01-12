@@ -61,8 +61,12 @@ export async function removeSkill(locations: string[]): Promise<number> {
 export async function unlearn(
   skill: string,
   options: { yes?: boolean } = {},
-  projectRoot: string = process.cwd()
+  commandOrRoot?: any
 ): Promise<void> {
+  // If called from Commander, 3rd arg is Command object.
+  // If called programmatically, it might be projectRoot string.
+  const projectRoot = typeof commandOrRoot === 'string' ? commandOrRoot : process.cwd();
+
   console.log(chalk.yellow(`🗑️  Removing "${skill}"...\n`));
 
   const locations = findSkillLocations(projectRoot, skill);

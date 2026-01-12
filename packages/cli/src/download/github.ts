@@ -1,18 +1,26 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, copyFile, readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
 export interface DownloadOptions {
-  source: string;    // "github:org/repo/path"
+  source: string;    // "github:org/repo/path" or "file:/absolute/path"
   version?: string;  // commit hash or tag
   destPath: string;  // where to write
 }
 
-export function parseSource(source: string): { owner: string; repo: string; path: string } {
+export type SourceInfo = 
+  | { type: 'github'; owner: string; repo: string; path: string }
+  | { type: 'file'; path: string };
+
+export function parseSource(source: string): SourceInfo {
+  if (source.startsWith('file:')) {
+    return { type: 'file', path: source.substring(5) };
+  }
+
   const match = source.match(/^github:([^/]+)\/([^/]+)\/(.+)$/);
   if (!match) {
-    throw new Error(`Invalid GitHub source format: ${source}. Expected github:owner/repo/path`);
+    throw new Error(`Invalid source format: ${source}. Expected github:owner/repo/path or file:/path`);
   }
-  return { owner: match[1], repo: match[2], path: match[3] };
+  return { type: 'github', owner: match[1], repo: match[2], path: match[3] };
 }
 
 async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
@@ -37,7 +45,16 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
 }
 
 export async function downloadSkill(options: DownloadOptions): Promise<void> {
-  const { owner, repo, path: srcPath } = parseSource(options.source);
+  const parsed = parseSource(options.source);
+  
+  // Strategy 0: Local file (Test/Dev)
+  if (parsed.type === 'file') {
+    await mkdir(dirname(options.destPath), { recursive: true });
+    await copyFile(parsed.path, options.destPath);
+    return;
+  }
+
+  const { owner, repo, path: srcPath } = parsed;
   const version = options.version || 'main';
 
   // Strategy 1: Try as single file (Raw API)

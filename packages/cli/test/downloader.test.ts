@@ -22,7 +22,12 @@ describe('GitHub Downloader', () => {
   describe('parseSource', () => {
     it('should parse valid github source', () => {
       const res = parseSource('github:org/repo/folder/file.md');
-      expect(res).toEqual({ owner: 'org', repo: 'repo', path: 'folder/file.md' });
+      expect(res).toEqual({ type: 'github', owner: 'org', repo: 'repo', path: 'folder/file.md' });
+    });
+
+    it('should parse local file source', () => {
+      const res = parseSource('file:/tmp/skill.md');
+      expect(res).toEqual({ type: 'file', path: '/tmp/skill.md' });
     });
 
     it('should throw on invalid format', () => {
