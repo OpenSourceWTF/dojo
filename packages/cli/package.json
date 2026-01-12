@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Dojo Skill Manager CLI",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./lib/install.js": "./dist/lib/install.js"
+  },
   "bin": {
     "dojo": "./dist/index.js"
   },
