@@ -39,6 +39,32 @@ describe('claudeToGemini', () => {
     const result = await readFile(destFile, 'utf-8');
     expect(result).toBe(content);
   });
+
+  it('should skip existing files if force is false', async () => {
+    const sourceFile = join(testDir, 'source.md');
+    const destFile = join(testDir, 'dest.md');
+    await writeFile(sourceFile, 'new content');
+    await writeFile(destFile, 'old content');
+
+    const result = claudeToGemini(sourceFile, destFile, { force: false });
+    
+    expect(result).toBe(false);
+    const content = await readFile(destFile, 'utf-8');
+    expect(content).toBe('old content');
+  });
+
+  it('should overwrite existing files if force is true', async () => {
+    const sourceFile = join(testDir, 'source.md');
+    const destFile = join(testDir, 'dest.md');
+    await writeFile(sourceFile, 'new content');
+    await writeFile(destFile, 'old content');
+
+    const result = claudeToGemini(sourceFile, destFile, { force: true });
+    
+    expect(result).toBe(true);
+    const content = await readFile(destFile, 'utf-8');
+    expect(content).toBe('new content');
+  });
 });
 
 describe('syncClaudeToGemini', () => {
@@ -93,5 +119,23 @@ describe('syncClaudeToGemini', () => {
     expect(result.synced).toHaveLength(1);
     expect(result.synced).toContain('skill.md');
     expect(result.skipped).toHaveLength(2);
+  });
+
+  it('should skip existing files in batch sync when force is false', async () => {
+    const claudeDir = join(testDir, '.claude', 'skills');
+    const geminiDir = join(testDir, '.agent', 'workflows');
+    await mkdir(claudeDir, { recursive: true });
+    await mkdir(geminiDir, { recursive: true });
+
+    await writeFile(join(claudeDir, 'skill1.md'), 'new content 1');
+    await writeFile(join(geminiDir, 'skill1.md'), 'old content 1'); // Exists
+
+    const result = syncClaudeToGemini(testDir, { force: false });
+
+    expect(result.synced).not.toContain('skill1.md');
+    expect(result.skipped).toContain('skill1.md');
+    
+    const content = await readFile(join(geminiDir, 'skill1.md'), 'utf-8');
+    expect(content).toBe('old content 1');
   });
 });

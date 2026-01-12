@@ -6,11 +6,17 @@ import path from 'path';
 vi.mock('fs/promises');
 
 describe('claudeToCursor', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
   it('should transform simple markdown to cursor rule format', async () => {
     const sourceContent = '# My Skill\n\nSome description.\n\n## Rules\n- Rule 1';
     const sourcePath = '/mock/project/.claude/skills/my-skill.md';
     const destPath = '/mock/project/.cursor/rules/my-skill/RULE.md';
 
+    // Mock file doesn't exist (access throws)
+    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
     vi.mocked(fs.readFile).mockResolvedValue(sourceContent);
     vi.mocked(fs.mkdir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined);
@@ -41,7 +47,12 @@ Some description.
     const sourcePath = '/mock/src.md';
     const destPath = '/mock/dest/RULE.md';
 
+    // Mock file doesn't exist
+    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
     vi.mocked(fs.readFile).mockResolvedValue(sourceContent);
+    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
     await claudeToCursor(sourcePath, destPath);
 
     expect(fs.writeFile).toHaveBeenCalledWith(
@@ -56,7 +67,12 @@ Some description.
     const sourcePath = '/mock/src.md';
     const destPath = '/mock/dest/RULE.md';
 
+    // Mock file doesn't exist
+    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
     vi.mocked(fs.readFile).mockResolvedValue(sourceContent);
+    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+
     await claudeToCursor(sourcePath, destPath);
 
     expect(fs.writeFile).toHaveBeenCalledWith(
@@ -64,6 +80,32 @@ Some description.
       expect.stringContaining('description: Imported from dojo'),
       'utf-8'
     );
+  });
+
+  it('should skip existing file if force is false', async () => {
+    const sourcePath = '/mock/project/.claude/skills/my-skill.md';
+    const destPath = '/mock/project/.cursor/rules/my-skill/RULE.md';
+
+    vi.mocked(fs.access).mockResolvedValue(undefined); // Exists
+
+    const result = await claudeToCursor(sourcePath, destPath, { force: false });
+
+    expect(result).toBe(false);
+    expect(fs.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('should overwrite existing file if force is true', async () => {
+    const sourcePath = '/mock/project/.claude/skills/my-skill.md';
+    const destPath = '/mock/project/.cursor/rules/my-skill/RULE.md';
+    const sourceContent = '# Content';
+    
+    vi.mocked(fs.access).mockResolvedValue(undefined); // Exists
+    vi.mocked(fs.readFile).mockResolvedValue(sourceContent);
+
+    const result = await claudeToCursor(sourcePath, destPath, { force: true });
+
+    expect(result).toBe(true);
+    expect(fs.writeFile).toHaveBeenCalled();
   });
 });
 
@@ -73,9 +115,9 @@ describe('syncClaudeToCursor', () => {
     const skillsDir = path.join(projectRoot, '.claude/skills');
 
     vi.mocked(fs.readdir).mockResolvedValue(['skill1.md', 'skill2.md', 'ignore.txt'] as any);
-    // Mock stats for file check if needed, strictly readdir returns strings usually
-    // assuming naive implementation first
-
+    // Mock access to fail (files don't exist)
+    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
+    
     vi.mocked(fs.readFile).mockResolvedValue('# Content');
 
     const result = await syncClaudeToCursor(projectRoot);
@@ -85,5 +127,18 @@ describe('syncClaudeToCursor', () => {
     expect(result.synced).toContain('skill1.md');
     expect(result.synced).toContain('skill2.md');
     expect(result.synced).toHaveLength(2);
+  });
+
+  it('should skip existing files when force is false', async () => {
+    const projectRoot = '/mock/project';
+    vi.mocked(fs.readdir).mockResolvedValue(['skill1.md'] as any);
+    
+    // Mock access to succeed (file exists)
+    vi.mocked(fs.access).mockResolvedValue(undefined);
+
+    const result = await syncClaudeToCursor(projectRoot, { force: false });
+
+    expect(result.synced).toHaveLength(0);
+    expect(result.skipped).toContain('skill1.md');
   });
 });

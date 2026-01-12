@@ -29,6 +29,7 @@ program.command('list')
 
 program.command('sync')
   .description('Sync skills across agent formats')
+  .option('-f, --force', 'Overwrite existing skills')
   .action(sync);
 
 program.command('unlearn')
