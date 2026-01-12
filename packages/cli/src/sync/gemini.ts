@@ -1,11 +1,21 @@
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 
+export interface SyncOptions {
+  force?: boolean;
+}
+
 /**
  * Transform Claude skill to Gemini format (1:1 copy).
  * Claude and Gemini use identical markdown format.
+ * Returns true if file was written, false if skipped.
  */
-export function claudeToGemini(sourcePath: string, destPath: string): void {
+export function claudeToGemini(sourcePath: string, destPath: string, options: SyncOptions = {}): boolean {
+  // Check if destination exists and we shouldn't overwrite
+  if (existsSync(destPath) && !options.force) {
+    return false;
+  }
+
   // Read source content
   const content = readFileSync(sourcePath, 'utf-8');
 
@@ -17,6 +27,7 @@ export function claudeToGemini(sourcePath: string, destPath: string): void {
 
   // Write to destination (1:1 copy)
   writeFileSync(destPath, content);
+  return true;
 }
 
 /**
@@ -25,7 +36,8 @@ export function claudeToGemini(sourcePath: string, destPath: string): void {
  * - Dest: .agent/workflows/*.md
  */
 export function syncClaudeToGemini(
-  projectRoot: string
+  projectRoot: string,
+  options: SyncOptions = {}
 ): { synced: string[]; skipped: string[] } {
   const synced: string[] = [];
   const skipped: string[] = [];
@@ -51,8 +63,12 @@ export function syncClaudeToGemini(
     const sourcePath = join(claudeDir, file);
     const destPath = join(geminiDir, file);
 
-    claudeToGemini(sourcePath, destPath);
-    synced.push(file);
+    const wasSynced = claudeToGemini(sourcePath, destPath, options);
+    if (wasSynced) {
+      synced.push(file);
+    } else {
+      skipped.push(file);
+    }
   }
 
   return { synced, skipped };
