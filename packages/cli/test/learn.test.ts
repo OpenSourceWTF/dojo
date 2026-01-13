@@ -12,7 +12,7 @@ describe('learn command', () => {
   beforeEach(async () => {
     await mkdir(tmpRoot, { recursive: true });
     vi.spyOn(process, 'cwd').mockReturnValue(tmpRoot);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => { });
     mockExit = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called');
     });
@@ -112,8 +112,8 @@ describe('learn command', () => {
     expect(existsSync(kungfuPath)).toBe(true);
     expect(existsSync(fileUtilsPath)).toBe(true);
 
-    // Verify console output showed dependency tree
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('dependencies'));
+    // Verify console output showed dependency in tree
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('file-utils'));
   });
 
   it('should install to multiple agent directories', async () => {

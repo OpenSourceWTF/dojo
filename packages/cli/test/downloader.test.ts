@@ -61,15 +61,24 @@ describe('GitHub Downloader', () => {
       expect(content).toBe(mockContent);
     });
 
-    it('should fall back to API for directories', async () => {
-      // Mock Raw URL fails (404)
-      // Mock API URL returns directory listing
+    it('should download SKILL.md from directory source', async () => {
+      // Mock Raw URL fails for directory path but succeeds for SKILL.md
+      const mockSkillContent = '# Skill from directory';
       const mockDirList = [
-        { name: 'rule.md', type: 'file', download_url: 'https://raw.github.../rule.md' },
+        { name: 'SKILL.md', type: 'file', download_url: 'https://raw.github.../SKILL.md' },
         { name: 'config.json', type: 'file', download_url: 'https://raw.github.../config.json' }
       ];
 
       (global.fetch as Mock).mockImplementation((url: string) => {
+        // SKILL.md direct fetch succeeds
+        if (url.includes('SKILL.md')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve(mockSkillContent)
+          });
+        }
+        // API contents returns directory listing
         if (url.includes('contents/')) {
           return Promise.resolve({
             ok: true,
@@ -77,35 +86,23 @@ describe('GitHub Downloader', () => {
             json: () => Promise.resolve(mockDirList)
           });
         }
-        if (url.includes('raw.github')) {
-          // NEW: Fail for the directory path itself
-          if (url.endsWith('my-skill')) {
-            return Promise.resolve({ ok: false, status: 404 });
-          }
-          // Return fake content based on URL
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            text: () => Promise.resolve(`Content for ${url}`)
-          });
-        }
-        // First attempt raw fail
+        // Raw directory path fails (not a file)
         return Promise.resolve({ ok: false, status: 404 });
       });
 
-      const destDir = join(tmpRoot, 'my-skill');
+      const destFile = join(tmpRoot, 'skill.md');
       await downloadSkill({
         source: 'github:test/repo/my-skill',
-        destPath: destDir
+        destPath: destFile
       });
 
-      // Verify directory Created
-      const stats = await stat(destDir);
-      expect(stats.isDirectory()).toBe(true);
+      // Verify file was created (not directory)
+      const stats = await stat(destFile);
+      expect(stats.isFile()).toBe(true);
 
-      // Verify files
-      const ruleContent = await readFile(join(destDir, 'rule.md'), 'utf-8');
-      expect(ruleContent).toContain('Content for');
+      // Verify content is from SKILL.md
+      const content = await readFile(destFile, 'utf-8');
+      expect(content).toBe(mockSkillContent);
     });
 
     it('should retry on network error', async () => {
