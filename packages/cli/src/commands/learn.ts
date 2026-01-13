@@ -10,10 +10,10 @@ import { resolveSkill, detectCycle } from '../resolver/dependencies.js';
 import { downloadSkill } from '../download/github.js';
 import { detectAgents, DetectedAgent } from '../agents/detector.js';
 import { addMcpServersToConfig } from '../mcp/config.js';
+import { prompt } from '../utils/prompt.js';
 import { join, relative, dirname } from 'node:path';
-import { mkdir, writeFile, readFile, symlink, unlink, stat } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, symlink, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import * as readline from 'node:readline';
 
 interface LearnOptions {
   registry?: string;  // Local path, github:owner/repo, or URL
@@ -104,7 +104,10 @@ dojo_installed: ${new Date().toISOString().split('T')[0]}
 }
 
 /**
- * Prompt user to select from multiple matches
+ * Prompt user to select from multiple matches.
+ * 
+ * @param matches - Array of skill matches to choose from
+ * @returns The selected skill's FQN
  */
 async function promptUserSelection(matches: { fqn: string; skill: SkillEntry }[]): Promise<string> {
   console.log(chalk.yellow('\nMultiple skills found. Please select one:\n'));
@@ -116,22 +119,13 @@ async function promptUserSelection(matches: { fqn: string; skill: SkillEntry }[]
     }
   });
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
+  const answer = await prompt('\nEnter number: ');
+  const index = parseInt(answer, 10) - 1;
 
-  return new Promise((resolve, reject) => {
-    rl.question(chalk.yellow('\nEnter number: '), (answer) => {
-      rl.close();
-      const index = parseInt(answer, 10) - 1;
-      if (index >= 0 && index < matches.length) {
-        resolve(matches[index].fqn);
-      } else {
-        reject(new Error('Invalid selection'));
-      }
-    });
-  });
+  if (index >= 0 && index < matches.length) {
+    return matches[index].fqn;
+  }
+  throw new Error('Invalid selection');
 }
 
 /**

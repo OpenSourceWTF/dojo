@@ -8,7 +8,7 @@ import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import chalk from 'chalk';
-import * as readline from 'node:readline';
+import { prompt } from '../utils/prompt.js';
 import { McpServerConfig } from '../registry/loader.js';
 
 // Known MCP config locations
@@ -34,7 +34,9 @@ interface McpConfig {
 }
 
 /**
- * Load Dojo preferences
+ * Load Dojo preferences.
+ * 
+ * @returns The saved preferences or empty object
  */
 async function loadPreferences(): Promise<DojoPreferences> {
   try {
@@ -46,7 +48,9 @@ async function loadPreferences(): Promise<DojoPreferences> {
 }
 
 /**
- * Save Dojo preferences
+ * Save Dojo preferences.
+ * 
+ * @param prefs - Preferences to save
  */
 async function savePreferences(prefs: DojoPreferences): Promise<void> {
   await mkdir(dirname(DOJO_PREFS_PATH), { recursive: true });
@@ -54,7 +58,10 @@ async function savePreferences(prefs: DojoPreferences): Promise<void> {
 }
 
 /**
- * Check if a file exists
+ * Check if a file exists.
+ * 
+ * @param path - Path to check
+ * @returns True if file exists
  */
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -66,7 +73,10 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 /**
- * Prompt user to select MCP config file
+ * Prompt user to select MCP config file.
+ * 
+ * @param defaultPath - Optional default path from preferences
+ * @returns Selected config file path
  */
 async function promptMcpConfigSelection(defaultPath?: string): Promise<string> {
   // Find existing configs
@@ -88,12 +98,7 @@ async function promptMcpConfigSelection(defaultPath?: string): Promise<string> {
     const defaultName = MCP_CONFIG_OPTIONS.find(o => o.path === defaultPath)?.name || 'Custom';
     console.log(chalk.gray(`   Default: ${defaultName} (${defaultPath})`));
 
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await new Promise<string>(resolve => {
-      rl.question(chalk.yellow('   Use default? [Y/n]: '), resolve);
-    });
-    rl.close();
-
+    const answer = await prompt('   Use default? [Y/n]: ');
     if (answer.toLowerCase() !== 'n') {
       return defaultPath;
     }
@@ -110,13 +115,9 @@ async function promptMcpConfigSelection(defaultPath?: string): Promise<string> {
     console.log(chalk.gray(`       ${opt.path}`));
   });
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise<string>(resolve => {
-    rl.question(chalk.yellow('\n   Enter number: '), resolve);
-  });
-  rl.close();
-
+  const answer = await prompt('\n   Enter number: ');
   const index = parseInt(answer, 10) - 1;
+
   if (index >= 0 && index < options.length) {
     return options[index].path;
   }
@@ -126,7 +127,10 @@ async function promptMcpConfigSelection(defaultPath?: string): Promise<string> {
 }
 
 /**
- * Load MCP config from a path
+ * Load MCP config from a path.
+ * 
+ * @param configPath - Path to config file
+ * @returns Parsed config or empty mcpServers object
  */
 async function loadMcpConfig(configPath: string): Promise<McpConfig> {
   try {
@@ -138,7 +142,10 @@ async function loadMcpConfig(configPath: string): Promise<McpConfig> {
 }
 
 /**
- * Save MCP config to a path
+ * Save MCP config to a path.
+ * 
+ * @param configPath - Path to save config
+ * @param config - Config object to save
  */
 async function saveMcpConfig(configPath: string, config: McpConfig): Promise<void> {
   await mkdir(dirname(configPath), { recursive: true });
@@ -146,7 +153,10 @@ async function saveMcpConfig(configPath: string, config: McpConfig): Promise<voi
 }
 
 /**
- * Add MCP servers to config (with user selection)
+ * Add MCP servers to config (with user selection).
+ * 
+ * @param servers - Array of MCP server configurations to add
+ * @returns Array of server names that were added
  */
 export async function addMcpServersToConfig(servers: McpServerConfig[]): Promise<string[]> {
   if (servers.length === 0) return [];
@@ -182,23 +192,16 @@ export async function addMcpServersToConfig(servers: McpServerConfig[]): Promise
     let envVars: Record<string, string> = {};
     if (server.env) {
       console.log(chalk.yellow(`   ${server.name} requires configuration:`));
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
       for (const [key, defaultValue] of Object.entries(server.env)) {
         const isPlaceholder = defaultValue.startsWith('${') || defaultValue === '';
-        const prompt = isPlaceholder
+        const promptText = isPlaceholder
           ? `     ${key}: `
           : `     ${key} [${defaultValue}]: `;
 
-        const value = await new Promise<string>(resolve => {
-          rl.question(chalk.cyan(prompt), answer => {
-            resolve(answer || defaultValue);
-          });
-        });
-
-        envVars[key] = value;
+        const value = await prompt(promptText, { color: 'cyan' });
+        envVars[key] = value || defaultValue;
       }
-      rl.close();
     }
 
     config.mcpServers[server.name] = {
@@ -220,7 +223,9 @@ export async function addMcpServersToConfig(servers: McpServerConfig[]): Promise
 }
 
 /**
- * List currently configured MCP servers from default config
+ * List currently configured MCP servers from default config.
+ * 
+ * @returns Record of server names to their configs
  */
 export async function listMcpServers(): Promise<Record<string, { command: string; args: string[] }>> {
   const prefs = await loadPreferences();
@@ -231,7 +236,10 @@ export async function listMcpServers(): Promise<Record<string, { command: string
 }
 
 /**
- * Remove an MCP server from default config
+ * Remove an MCP server from default config.
+ * 
+ * @param name - Server name to remove
+ * @returns True if removed, false if not found
  */
 export async function removeMcpServer(name: string): Promise<boolean> {
   const prefs = await loadPreferences();
