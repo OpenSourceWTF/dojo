@@ -11,6 +11,22 @@ interface SearchOptions {
   registry?: string;  // Local path or github:owner/repo URL
 }
 
+/**
+ * Highlight search term in text
+ */
+function highlightTerm(text: string, term: string): string {
+  const regex = new RegExp(`(${term})`, 'gi');
+  return text.replace(regex, chalk.yellow.bold('$1'));
+}
+
+/**
+ * Extract organization from FQN like @org/skill
+ */
+function extractOrg(fqn: string): string | null {
+  const match = fqn.match(/^@([^/]+)\//);
+  return match ? match[1] : null;
+}
+
 export async function search(term: string, options: SearchOptions = {}) {
   // Parse registry option - local path uses localOnly mode
   const isLocalRegistry = Boolean(options.registry && !options.registry.startsWith('github:') && !options.registry.startsWith('https://'));
@@ -44,13 +60,27 @@ export async function search(term: string, options: SearchOptions = {}) {
   console.log(`Found ${results.length} skills matching "${term}":\n`);
 
   for (const res of results) {
-    console.log(`  ${chalk.cyan(res.fqn)}`);
+    const org = extractOrg(res.fqn);
+    const orgLabel = org ? chalk.gray(`[${org}] `) : '';
+    const highlightedFqn = highlightTerm(res.fqn, term);
+
+    console.log(`  ${orgLabel}${chalk.cyan(highlightedFqn)}`);
+
     if (res.skill.description) {
-      console.log(`  ${res.skill.description}`);
+      const highlightedDesc = highlightTerm(res.skill.description, term);
+      console.log(`  ${highlightedDesc}`);
     }
+
     if (res.skill.tags && res.skill.tags.length > 0) {
-      console.log(`  Tags: ${chalk.gray(res.skill.tags.join(', '))}`);
+      const highlightedTags = res.skill.tags.map(t => highlightTerm(t, term)).join(', ');
+      console.log(`  Tags: ${chalk.gray(highlightedTags)}`);
     }
+
+    if (res.skill.aliases && res.skill.aliases.length > 0) {
+      const highlightedAliases = res.skill.aliases.map(a => highlightTerm(a, term)).join(', ');
+      console.log(`  Aliases: ${chalk.gray(highlightedAliases)}`);
+    }
+
     console.log('');
   }
 }

@@ -4,13 +4,18 @@
  * See LICENSE file for details.
  */
 
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 // Remote registry configuration
 const REGISTRY_REPO = 'OpenSourceWTF/dojo-skills';
 const REGISTRY_BRANCH = 'main';
 const REGISTRY_BASE_URL = `https://raw.githubusercontent.com/${REGISTRY_REPO}/${REGISTRY_BRANCH}`;
+
+// Cache configuration
+const CACHE_DIR = join(homedir(), '.dojo', 'cache');
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export interface SkillEntry {
   name: string;
@@ -36,6 +41,12 @@ interface RegistryFile {
   skills: Record<string, SkillEntry>;
 }
 
+interface RegistryIndex {
+  version: string;
+  updated: string;
+  categories: Record<string, string[]>;
+}
+
 /**
  * Merge registries with priority.
  * The first argument has the HIGHEST priority (wins conflicts).
@@ -54,48 +65,82 @@ export function mergeRegistries(...registries: Registry[]): Registry {
 }
 
 /**
- * Fetch with retry and timeout
+ * Ensure cache directory exists
  */
-async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
-  let lastError: unknown;
-  for (let i = 0; i < retries; i++) {
+async function ensureCacheDir(): Promise<void> {
+  try {
+    await mkdir(CACHE_DIR, { recursive: true });
+  } catch {
+    // Directory might already exist
+  }
+}
+
+/**
+ * Check if a cached file is still valid
+ */
+async function isCacheValid(cachePath: string): Promise<boolean> {
+  try {
+    const stats = await stat(cachePath);
+    return Date.now() - stats.mtimeMs < CACHE_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch with caching
+ */
+async function fetchWithCache(url: string, cacheKey: string): Promise<string | null> {
+  await ensureCacheDir();
+  const cachePath = join(CACHE_DIR, `${cacheKey}.json`);
+
+  // Check cache first
+  if (await isCacheValid(cachePath)) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (res.ok) return res;
-      if (res.status === 404) return res;
-      if (res.status >= 500) throw new Error(`Fetch failed: ${res.status}`);
-      return res;
-    } catch (err: unknown) {
-      lastError = err;
-      if (i < retries - 1) {
-        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
-      }
+      return await readFile(cachePath, 'utf-8');
+    } catch {
+      // Cache read failed, fetch fresh
     }
   }
-  throw lastError || new Error(`Failed to fetch ${url}`);
+
+  // Fetch from remote
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+
+    const content = await res.text();
+
+    // Cache the result
+    try {
+      await writeFile(cachePath, content, 'utf-8');
+    } catch {
+      // Cache write failed, continue anyway
+    }
+
+    return content;
+  } catch {
+    // Network error, try stale cache
+    try {
+      return await readFile(cachePath, 'utf-8');
+    } catch {
+      return null;
+    }
+  }
 }
 
 /**
  * Fetch registry index from GitHub
- * Returns list of JSON file paths in the registry directory
  */
-async function fetchRegistryIndex(category: string): Promise<string[]> {
-  // Use GitHub API to list directory contents
-  const apiUrl = `https://api.github.com/repos/${REGISTRY_REPO}/contents/registry/${category}?ref=${REGISTRY_BRANCH}`;
+async function fetchRegistryIndex(): Promise<RegistryIndex | null> {
+  const url = `${REGISTRY_BASE_URL}/registry/index.json`;
+  const content = await fetchWithCache(url, 'registry-index');
+
+  if (!content) return null;
 
   try {
-    const res = await fetchWithRetry(apiUrl);
-    if (!res.ok) return [];
-
-    const data = await res.json() as Array<{ name: string; type: string }>;
-    return data
-      .filter(item => item.type === 'file' && item.name.endsWith('.json'))
-      .map(item => item.name);
-  } catch (err: unknown) {
-    return [];
+    return JSON.parse(content) as RegistryIndex;
+  } catch {
+    return null;
   }
 }
 
@@ -105,17 +150,18 @@ async function fetchRegistryIndex(category: string): Promise<string[]> {
 async function loadRemoteRegistryFile(category: string, filename: string): Promise<Registry> {
   const skills = new Map<string, SkillEntry>();
   const url = `${REGISTRY_BASE_URL}/registry/${category}/${filename}`;
+  const cacheKey = `registry-${category}-${filename.replace('.json', '')}`;
+
+  const content = await fetchWithCache(url, cacheKey);
+  if (!content) return { skills };
 
   try {
-    const res = await fetchWithRetry(url);
-    if (!res.ok) return { skills };
-
-    const json = await res.json() as RegistryFile;
+    const json = JSON.parse(content) as RegistryFile;
     for (const [key, skill] of Object.entries(json.skills || {})) {
       skills.set(key, skill);
     }
-  } catch (err: unknown) {
-    console.warn(`Failed to load registry file ${url}:`, err);
+  } catch {
+    // Parse error
   }
 
   return { skills };
@@ -124,8 +170,7 @@ async function loadRemoteRegistryFile(category: string, filename: string): Promi
 /**
  * Load all registry files from a remote category
  */
-async function loadRemoteRegistryDir(category: string): Promise<Registry> {
-  const files = await fetchRegistryIndex(category);
+async function loadRemoteRegistryDir(category: string, files: string[]): Promise<Registry> {
   const registries: Registry[] = [];
 
   for (const file of files) {
@@ -182,10 +227,15 @@ export async function loadRegistry(localPath?: string, options: LoadRegistryOpti
     return mergeRegistries(official, community, user);
   }
 
-  // Try remote first
-  try {
-    const official = await loadRemoteRegistryDir('official');
-    const community = await loadRemoteRegistryDir('community');
+  // Fetch registry index first
+  const index = await fetchRegistryIndex();
+
+  if (index && index.categories) {
+    const officialFiles = index.categories.official || [];
+    const communityFiles = index.categories.community || [];
+
+    const official = await loadRemoteRegistryDir('official', officialFiles);
+    const community = await loadRemoteRegistryDir('community', communityFiles);
 
     // Merge remote registries (official > community)
     const remote = mergeRegistries(official, community);
@@ -199,8 +249,6 @@ export async function loadRegistry(localPath?: string, options: LoadRegistryOpti
       }
       return remote;
     }
-  } catch (err: unknown) {
-    console.warn('Failed to fetch remote registry, falling back to local:', err);
   }
 
   // Fallback to local registry
