@@ -9,30 +9,95 @@ import { searchRegistry, loadRegistry, SkillEntry } from '../registry/index.js';
 import { resolveSkill, detectCycle } from '../resolver/dependencies.js';
 import { downloadSkill } from '../download/github.js';
 import { detectAgents, DetectedAgent } from '../agents/detector.js';
-import { join } from 'node:path';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { join, relative, dirname } from 'node:path';
+import { mkdir, writeFile, readFile, symlink, unlink, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import * as readline from 'node:readline';
 
 interface LearnOptions {
   registry?: string;  // Local path, github:owner/repo, or URL
 }
 
+// Canonical skill storage location
+const DOJO_SKILLS_DIR = join(homedir(), '.dojo', 'skills');
+
 /**
  * Parse skill input like "kungfu", "kungfu@1.0.0", or "@anthropics/create-docx"
  */
 function parseSkillInput(input: string): { name: string; version?: string } {
-  // Check for @version suffix (but not @org prefix)
   const atIndex = input.lastIndexOf('@');
-
-  // If @ is at position 0, it's an FQN like @anthropics/skill
-  // Check if there's another @ for version
   if (atIndex > 0) {
     const name = input.substring(0, atIndex);
     const version = input.substring(atIndex + 1);
     return { name, version };
   }
-
   return { name: input };
+}
+
+/**
+ * Inject/update YAML frontmatter in skill content
+ */
+function injectFrontmatter(
+  content: string,
+  metadata: {
+    name: string;
+    source: string;
+    version: string;
+    fqn: string;
+    description?: string;
+  }
+): string {
+  // Check if content already has frontmatter
+  const hasFrontmatter = content.trimStart().startsWith('---');
+
+  if (hasFrontmatter) {
+    // Parse existing frontmatter and merge
+    const endIndex = content.indexOf('---', 3);
+    if (endIndex > 0) {
+      const existingFm = content.substring(3, endIndex).trim();
+      const body = content.substring(endIndex + 3).trim();
+
+      // Parse existing fields
+      const existing: Record<string, string> = {};
+      for (const line of existingFm.split('\n')) {
+        const colonIndex = line.indexOf(':');
+        if (colonIndex > 0) {
+          const key = line.substring(0, colonIndex).trim();
+          const value = line.substring(colonIndex + 1).trim();
+          existing[key] = value;
+        }
+      }
+
+      // Merge with dojo metadata (dojo fields take precedence for tracking)
+      const merged = {
+        ...existing,
+        name: existing.name || metadata.name,
+        dojo_source: metadata.source,
+        dojo_version: metadata.version,
+        dojo_fqn: metadata.fqn,
+        dojo_installed: new Date().toISOString().split('T')[0],
+      };
+
+      // Build new frontmatter
+      const newFm = Object.entries(merged)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+
+      return `---\n${newFm}\n---\n\n${body}`;
+    }
+  }
+
+  // No existing frontmatter - create new
+  const fm = `---
+name: ${metadata.name}
+description: ${metadata.description || 'Skill installed via dojo'}
+dojo_source: ${metadata.source}
+dojo_version: ${metadata.version}
+dojo_fqn: ${metadata.fqn}
+dojo_installed: ${new Date().toISOString().split('T')[0]}
+---`;
+
+  return `${fm}\n\n${content}`;
 }
 
 /**
@@ -67,12 +132,13 @@ async function promptUserSelection(matches: { fqn: string; skill: SkillEntry }[]
 }
 
 /**
- * Write skill to a specific agent directory
+ * Create symlink from agent directory to canonical skill
  */
-async function writeSkillToAgent(
+async function symlinkSkillToAgent(
   agent: DetectedAgent,
   skillName: string,
-  content: string
+  canonicalPath: string,
+  projectRoot: string
 ): Promise<string> {
   let destPath: string;
 
@@ -81,16 +147,27 @@ async function writeSkillToAgent(
       // Claude and Gemini use flat .md files
       destPath = join(agent.path, `${skillName}.md`);
       await mkdir(agent.path, { recursive: true });
-      await writeFile(destPath, content);
+
+      // Remove existing file/symlink if present
+      try {
+        await unlink(destPath);
+      } catch {
+        // Doesn't exist, that's fine
+      }
+
+      // Create relative symlink
+      const relPath = relative(dirname(destPath), canonicalPath);
+      await symlink(relPath, destPath);
       break;
 
     case 'folder-rule':
-      // Cursor uses folder/RULE.md structure
+      // Cursor uses folder/RULE.md structure - needs actual file with special frontmatter
       const folderPath = join(agent.path, skillName);
       destPath = join(folderPath, 'RULE.md');
       await mkdir(folderPath, { recursive: true });
 
-      // Add Cursor frontmatter
+      // Read canonical content and add Cursor-specific frontmatter
+      const content = await readFile(canonicalPath, 'utf-8');
       const lines = content.split('\n');
       let description = 'Imported from dojo';
       if (lines.length > 0 && lines[0].trim().length > 0) {
@@ -101,6 +178,7 @@ async function writeSkillToAgent(
 name: ${skillName}
 alwaysApply: false
 description: ${description}
+dojo_canonical: ${canonicalPath}
 ---
 
 ${content}`;
@@ -125,62 +203,56 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     remoteUrl: !isLocalRegistry ? options.registry : undefined
   };
 
-  // 1. Parse skill input
+  // Parse input
   const { name: skillQuery, version } = parseSkillInput(skill);
 
-  console.log(chalk.blue(`🔍 Searching for "${skillQuery}"...`));
+  // 1. Search registry
+  console.log(chalk.gray(`🔍 Searching for "${skillQuery}"...`));
 
-  // 2. Search registry
   const results = await searchRegistry(skillQuery, {
     localRegistryPath: registryConfig.localRegistryPath,
     localOnly: registryConfig.localOnly
   });
 
   if (results.length === 0) {
-    console.log(chalk.red(`\n❌ No skills found matching "${skillQuery}"`));
+    console.log(chalk.red(`❌ No skills found matching "${skillQuery}"`));
     process.exit(1);
   }
 
-  // 3. Select skill (prompt if multiple matches)
-  let selectedFqn: string;
-
-  // Check for exact FQN match first
-  const exactMatch = results.find(r => r.fqn === skillQuery || r.fqn.endsWith(`/${skillQuery}`));
-
-  if (exactMatch) {
-    selectedFqn = exactMatch.fqn;
-  } else if (results.length === 1) {
-    selectedFqn = results[0].fqn;
+  // 2. Handle multiple matches
+  let fqn: string;
+  if (results.length === 1) {
+    fqn = results[0].fqn;
   } else {
-    // Multiple matches - prompt user
-    selectedFqn = await promptUserSelection(results.map(r => ({ fqn: r.fqn, skill: r.skill })));
+    // Check for exact match first
+    const exact = results.find(r => r.fqn === skillQuery || r.skill.name === skillQuery);
+    if (exact) {
+      fqn = exact.fqn;
+    } else {
+      fqn = await promptUserSelection(results);
+    }
   }
 
-  // 4. Load full registry for dependency resolution
+  // 3. Load full registry for dependency resolution
   const registry = await loadRegistry(registryConfig.localRegistryPath, { localOnly: registryConfig.localOnly });
-  const selectedSkill = registry.skills.get(selectedFqn);
 
-  if (!selectedSkill) {
-    console.log(chalk.red(`\n❌ Skill "${selectedFqn}" not found in registry`));
+  // 4. Get skill entry
+  const skillEntry = registry.skills.get(fqn);
+  if (!skillEntry) {
+    console.log(chalk.red(`❌ Skill "${fqn}" not found in registry`));
     process.exit(1);
   }
 
-  // 5. Check for circular dependencies
-  const cycle = detectCycle(selectedFqn, registry);
-  if (cycle) {
-    console.log(chalk.red(`\n❌ Circular dependency detected: ${cycle.join(' -> ')}`));
+  // 5. Detect cycles
+  const cycleCheck = detectCycle(fqn, registry);
+  if (cycleCheck) {
+    console.log(chalk.red(`❌ Circular dependency detected: ${cycleCheck.join(' -> ')}`));
     process.exit(1);
   }
 
-  // 6. Resolve dependencies
-  const resolved = resolveSkill(selectedFqn, registry);
-  const depCount = resolved.length - 1; // Exclude main skill
-
-  if (depCount > 0) {
-    console.log(chalk.blue(`📦 Installing ${selectedFqn} (+ ${depCount} dependencies)`));
-  } else {
-    console.log(chalk.blue(`📦 Installing ${selectedFqn}`));
-  }
+  // 6. Resolve all dependencies
+  const resolved = resolveSkill(fqn, registry);
+  console.log(chalk.blue(`📦 Installing ${fqn}`));
 
   // Display tree
   resolved.forEach((r, i) => {
@@ -198,33 +270,29 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     agents.push({ name: 'claude', path: claudePath, format: 'flat-md' });
   }
 
-  // 8. Download and install each skill
+  // 8. Ensure canonical skills directory exists
+  await mkdir(DOJO_SKILLS_DIR, { recursive: true });
+
+  // 9. Download and install each skill
   const installedPaths: string[] = [];
 
   for (const r of resolved) {
     const entry = r.entry;
     const rawName = entry.path || entry.name || r.fqn.split('/').pop() || r.fqn;
-    // Ensure we use a flat filename (no subdirectories) and strip .md if present
     let skillName = rawName.split('/').pop() || rawName;
     if (skillName.endsWith('.md')) {
       skillName = skillName.slice(0, -3);
     }
     const skillVersion = version || 'main';
 
-    // Download to temp location first (Claude format is canonical)
-    const claudeAgent = agents.find(a => a.name === 'claude');
-    const primaryPath = claudeAgent
-      ? join(claudeAgent.path, `${skillName}.md`)
-      : join(projectRoot, '.claude', 'skills', `${skillName}.md`);
-
-    // Ensure directory exists
-    await mkdir(join(projectRoot, '.claude', 'skills'), { recursive: true });
+    // Download to canonical location
+    const canonicalPath = join(DOJO_SKILLS_DIR, `${skillName}.md`);
 
     try {
       await downloadSkill({
         source: entry.source,
         version: skillVersion,
-        destPath: primaryPath
+        destPath: canonicalPath
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -232,24 +300,28 @@ export async function learn(skill: string, options: LearnOptions = {}) {
       process.exit(1);
     }
 
-    // Read the downloaded content
-    const content = await readFile(primaryPath, 'utf-8');
+    // Read downloaded content and inject frontmatter
+    let content = await readFile(canonicalPath, 'utf-8');
+    content = injectFrontmatter(content, {
+      name: skillName,
+      source: entry.source,
+      version: skillVersion,
+      fqn: r.fqn,
+      description: entry.description
+    });
+    await writeFile(canonicalPath, content);
 
-    // Write to all detected agent directories
+    // Symlink to all detected agent directories
     for (const agent of agents) {
-      if (agent.name === 'claude') {
-        installedPaths.push(primaryPath.replace(projectRoot + '/', ''));
-        continue; // Already written
-      }
-
-      const destPath = await writeSkillToAgent(agent, skillName, content);
+      const destPath = await symlinkSkillToAgent(agent, skillName, canonicalPath, projectRoot);
       installedPaths.push(destPath.replace(projectRoot + '/', ''));
     }
   }
 
-  // 9. Display success
+  // 10. Display success
   console.log(chalk.green('\n✅ Installed to:'));
+  console.log(chalk.gray(`   📁 ${DOJO_SKILLS_DIR} (canonical)`));
   for (const p of installedPaths) {
-    console.log(chalk.gray(`   • ${p}`));
+    console.log(chalk.gray(`   ↪ ${p}`));
   }
 }
