@@ -25,7 +25,14 @@ program.command('learn')
   .description('Install a skill')
   .argument('<skill>', 'Skill name or FQN (e.g., @org/skill)')
   .option('--registry <url>', 'Registry URL (local path or github:owner/repo)')
-  .action((skill, opts) => learn(skill, { registry: opts.registry }));
+  .option('--skill', 'Install skill/workflow file only (no MCP servers)')
+  .option('--workflow', 'Alias for --skill')
+  .option('--mcp', 'Install MCP servers only (no skill files)')
+  .action((skill, opts) => learn(skill, {
+    registry: opts.registry,
+    skillOnly: opts.skill || opts.workflow,
+    mcpOnly: opts.mcp
+  }));
 
 program.command('search')
   .description('Search for skills in the registry')

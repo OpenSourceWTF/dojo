@@ -17,6 +17,8 @@ import * as readline from 'node:readline';
 
 interface LearnOptions {
   registry?: string;  // Local path, github:owner/repo, or URL
+  skillOnly?: boolean; // Install skill/workflow files only
+  mcpOnly?: boolean;   // Install MCP servers only
 }
 
 // Canonical skill storage location
@@ -287,40 +289,42 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     }
     const skillVersion = version || 'main';
 
-    // Download to canonical location
-    const canonicalPath = join(DOJO_SKILLS_DIR, `${skillName}.md`);
+    // Download skill files (unless --mcp flag is set)
+    if (!options.mcpOnly) {
+      const canonicalPath = join(DOJO_SKILLS_DIR, `${skillName}.md`);
 
-    try {
-      await downloadSkill({
+      try {
+        await downloadSkill({
+          source: entry.source,
+          version: skillVersion,
+          destPath: canonicalPath
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.log(chalk.red(`\n❌ Failed to download ${r.fqn}: ${message}`));
+        process.exit(1);
+      }
+
+      // Read downloaded content and inject frontmatter
+      let content = await readFile(canonicalPath, 'utf-8');
+      content = injectFrontmatter(content, {
+        name: skillName,
         source: entry.source,
         version: skillVersion,
-        destPath: canonicalPath
+        fqn: r.fqn,
+        description: entry.description
       });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.log(chalk.red(`\n❌ Failed to download ${r.fqn}: ${message}`));
-      process.exit(1);
+      await writeFile(canonicalPath, content);
+
+      // Symlink to all detected agent directories
+      for (const agent of agents) {
+        const destPath = await symlinkSkillToAgent(agent, skillName, canonicalPath, projectRoot);
+        installedPaths.push(destPath.replace(projectRoot + '/', ''));
+      }
     }
 
-    // Read downloaded content and inject frontmatter
-    let content = await readFile(canonicalPath, 'utf-8');
-    content = injectFrontmatter(content, {
-      name: skillName,
-      source: entry.source,
-      version: skillVersion,
-      fqn: r.fqn,
-      description: entry.description
-    });
-    await writeFile(canonicalPath, content);
-
-    // Symlink to all detected agent directories
-    for (const agent of agents) {
-      const destPath = await symlinkSkillToAgent(agent, skillName, canonicalPath, projectRoot);
-      installedPaths.push(destPath.replace(projectRoot + '/', ''));
-    }
-
-    // Collect MCP servers for setup
-    if (entry.mcp_servers && entry.mcp_servers.length > 0) {
+    // Collect MCP servers for setup (unless --skill/--workflow flag is set)
+    if (!options.skillOnly && entry.mcp_servers && entry.mcp_servers.length > 0) {
       allMcpServers.push(...entry.mcp_servers);
     }
   }
@@ -332,10 +336,12 @@ export async function learn(skill: string, options: LearnOptions = {}) {
   }
 
   // 11. Display success
-  console.log(chalk.green('\n✅ Installed to:'));
-  console.log(chalk.gray(`   📁 ${DOJO_SKILLS_DIR} (canonical)`));
-  for (const p of installedPaths) {
-    console.log(chalk.gray(`   ↪ ${p}`));
+  console.log(chalk.green('\n✅ Installed!'));
+  if (installedPaths.length > 0) {
+    console.log(chalk.gray(`   📁 ${DOJO_SKILLS_DIR} (canonical)`));
+    for (const p of installedPaths) {
+      console.log(chalk.gray(`   ↪ ${p}`));
+    }
   }
 }
 
