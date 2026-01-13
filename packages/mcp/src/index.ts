@@ -1,3 +1,9 @@
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {

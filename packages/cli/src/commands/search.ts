@@ -1,3 +1,9 @@
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import chalk from 'chalk';
 import { loadRegistry, SkillEntry } from '../registry/loader.js';
 import { join } from 'node:path';

@@ -5,34 +5,89 @@
 [![npm version](https://img.shields.io/npm/v/@opensourcewtf/dojo-cli.svg)](https://www.npmjs.com/package/@opensourcewtf/dojo-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Dojo enables you to discover, install, and share skills across AI coding assistants like **Claude**, **Gemini**, and **Cursor**. Install a skill once, use it everywhere.
+Install skills once, use them across **Claude**, **Gemini**, and **Cursor**.
 
-## Features
-
-- 🔍 **Unified Search** - Find skills across a curated registry
-- 📦 **Multi-Agent Install** - One install writes to Claude, Gemini, and Cursor
-- 🔄 **Format Sync** - Automatically converts skills between agent formats  
-- 🌳 **Dependency Resolution** - Recursively resolves skill dependencies
-- 🤖 **MCP Integration** - Natural language skill discovery ("do you know testing?")
-
-## Quick Start
+## Install
 
 ```bash
-# Install globally
 npm install -g @opensourcewtf/dojo-cli
+```
 
+## Usage
+
+```bash
 # Search for skills
 dojo search testing
 
-# Install a skill (writes to all agent directories)
+# Install a skill
 dojo learn @anthropics/create-docx
 
 # List installed skills
 dojo list
 
-# Sync skills across agents
+# Sync across agents
 dojo sync
+
+# Remove a skill
+dojo unlearn create-docx
 ```
+
+## MCP Server Setup
+
+Dojo includes an MCP server for natural language skill discovery. When configured, agents can respond to phrases like *"do you know testing?"* or *"teach me debugging"*.
+
+### Claude Desktop
+
+Add to `~/.config/claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "dojo": {
+      "command": "npx",
+      "args": ["-y", "@opensourcewtf/dojo-mcp"]
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+Add to your Gemini settings file:
+
+```json
+{
+  "mcpServers": {
+    "dojo": {
+      "command": "npx",
+      "args": ["-y", "@opensourcewtf/dojo-mcp"]
+    }
+  }
+}
+```
+
+### Local Development
+
+For local development, use the built package:
+
+```json
+{
+  "mcpServers": {
+    "dojo": {
+      "command": "node",
+      "args": ["/path/to/dojo/packages/mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+## Supported Agents
+
+| Agent | Directory | Format |
+|-------|-----------|--------|
+| Claude | `.claude/skills/*.md` | Markdown |
+| Gemini | `.agent/workflows/*.md` | Markdown |
+| Cursor | `.cursor/rules/{skill}/RULE.md` | Folder + frontmatter |
 
 ## CLI Commands
 
@@ -44,59 +99,27 @@ dojo sync
 | `dojo sync` | Sync skills across all agent formats |
 | `dojo unlearn <skill>` | Remove a skill from all agents |
 
-## MCP Server
-
-Dojo includes an MCP server for natural skill discovery:
-
-```bash
-# Start the MCP server
-npx @opensourcewtf/dojo-mcp
-```
-
-The server exposes a `dojo_learn` tool that agents can call when users ask things like:
-- "Do you know how to create Word documents?"
-- "Teach me testing"
-- "Learn the debugging skill"
-
-## Supported Agents
-
-| Agent | Directory | Format |
-|-------|-----------|--------|
-| Claude Code | `.claude/skills/` | `*.md` |
-| Gemini CLI | `.agent/workflows/` | `*.md` |
-| Cursor | `.cursor/rules/{name}/RULE.md` | Folder + frontmatter |
-
-## Registry
-
-Skills are sourced from the [dojo-skills](https://github.com/opensourcewtf/dojo-skills) registry, organized by:
-- `official/` - Verified skills from AI vendors
-- `community/` - Community-contributed skills
-- `user/` - Local custom skills (gitignored)
-
-## Development
-
-```bash
-# Clone the repo
-git clone https://github.com/opensourcewtf/dojo.git
-cd dojo
-
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Run tests
-pnpm test
-```
-
 ## Packages
 
 | Package | Description |
 |---------|-------------|
-| [`@opensourcewtf/dojo-cli`](./packages/cli) | CLI tool for skill management |
-| [`@opensourcewtf/dojo-mcp`](./packages/mcp) | MCP server for natural language discovery |
+| [@opensourcewtf/dojo-cli](https://www.npmjs.com/package/@opensourcewtf/dojo-cli) | CLI for skill management |
+| [@opensourcewtf/dojo-mcp](https://www.npmjs.com/package/@opensourcewtf/dojo-mcp) | MCP server for AI agents |
+
+## Registry
+
+Skills are sourced from the [dojo-skills](https://github.com/opensourcewtf/dojo-skills) registry.
+
+## Development
+
+```bash
+git clone https://github.com/opensourcewtf/dojo.git
+cd dojo
+pnpm install
+pnpm build
+pnpm test
+```
 
 ## License
 
-MIT © [OpenSourceWTF](https://github.com/opensourcewtf)
+[MIT](LICENSE) © OpenSourceWTF

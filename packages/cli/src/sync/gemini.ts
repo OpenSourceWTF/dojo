@@ -1,3 +1,9 @@
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 

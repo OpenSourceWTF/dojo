@@ -2,56 +2,96 @@
 
 > MCP server for natural language AI skill discovery
 
-## Overview
+[![npm version](https://img.shields.io/npm/v/@opensourcewtf/dojo-mcp.svg)](https://www.npmjs.com/package/@opensourcewtf/dojo-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This package provides a [Model Context Protocol](https://modelcontextprotocol.io) server that enables AI assistants to discover and install skills through natural language.
-
-## Installation
+## Install
 
 ```bash
 npm install @opensourcewtf/dojo-mcp
 ```
 
-## Usage
+## MCP Configuration
 
-### Start the server
+### Claude Desktop
 
-```bash
-npx @opensourcewtf/dojo-mcp
-```
-
-### MCP Tool
-
-The server exposes a `dojo_learn` tool:
+Add to `~/.config/claude/claude_desktop_config.json`:
 
 ```json
 {
-  "name": "dojo_learn",
-  "description": "Learn a new skill or workflow. Use when user asks 'do you know X', 'teach me X', or 'learn X'",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "skill": {
-        "type": "string",
-        "description": "Skill name or search term"
-      }
-    },
-    "required": ["skill"]
+  "mcpServers": {
+    "dojo": {
+      "command": "npx",
+      "args": ["-y", "@opensourcewtf/dojo-mcp"]
+    }
   }
 }
 ```
 
-### Natural Language Triggers
+### Gemini CLI
 
-Users can invoke skill installation with phrases like:
+Add to your Gemini MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "dojo": {
+      "command": "npx",
+      "args": ["-y", "@opensourcewtf/dojo-mcp"]
+    }
+  }
+}
+```
+
+### Local Development
+
+```json
+{
+  "mcpServers": {
+    "dojo": {
+      "command": "node",
+      "args": ["/absolute/path/to/dojo/packages/mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+## Tool: `dojo_learn`
+
+The server exposes a single tool for skill installation:
+
+```
+Name: dojo_learn
+Description: Learn a new skill when user asks "do you know X", "teach me X", or "learn X"
+```
+
+### Input Schema
+
+```json
+{
+  "skill": "string (required) - Skill name or search term",
+  "version": "string (optional) - Version or commit hash"
+}
+```
+
+### Example Triggers
+
 - "Do you know how to create Word documents?"
 - "Teach me testing"
 - "Learn the debugging skill"
 
-## Dependencies
+## API
 
-This package requires `@opensourcewtf/dojo-cli` for skill installation.
+```typescript
+import { server, handleDojoLearn, TOOLS } from '@opensourcewtf/dojo-mcp';
+
+// Access tool definitions
+console.log(TOOLS);
+
+// Handle learn requests programmatically
+const result = await handleDojoLearn({ skill: 'testing' });
+```
 
 ## License
 
-MIT
+[MIT](../../LICENSE) © OpenSourceWTF

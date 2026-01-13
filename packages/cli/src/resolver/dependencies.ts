@@ -1,3 +1,9 @@
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import type { Registry, SkillEntry } from '../registry/loader.js';
 
 export interface ResolvedSkill {

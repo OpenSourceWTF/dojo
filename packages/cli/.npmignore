@@ -1,0 +1,15 @@
+# Source files (dist is published)
+src/
+test/
+tsconfig.json
+
+# Development
+.waaah/
+.agent/
+.claude/
+.cursor/
+*.log
+
+# IDE
+.vscode/
+.idea/

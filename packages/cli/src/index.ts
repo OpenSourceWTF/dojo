@@ -1,3 +1,10 @@
+#!/usr/bin/env node
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { learn } from './commands/learn.js';

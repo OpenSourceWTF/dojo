@@ -1,3 +1,9 @@
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import chalk from 'chalk';
 import { existsSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';

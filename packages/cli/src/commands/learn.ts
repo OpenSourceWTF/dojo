@@ -1,3 +1,9 @@
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import chalk from 'chalk';
 import { searchRegistry, loadRegistry, SkillEntry } from '../registry/index.js';
 import { resolveSkill, detectCycle } from '../resolver/dependencies.js';

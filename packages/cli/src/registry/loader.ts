@@ -1,3 +1,9 @@
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 

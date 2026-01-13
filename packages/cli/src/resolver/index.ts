@@ -1,3 +1,9 @@
+/**
+ * @license MIT
+ * Copyright (c) 2026 OpenSourceWTF
+ * See LICENSE file for details.
+ */
+
 import { loadRegistry, Registry, SkillEntry } from '../registry/loader.js';
 import { resolveSkill, detectCycle } from './dependencies.js';
 import { join } from 'node:path';

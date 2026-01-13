@@ -1,8 +1,11 @@
 # @opensourcewtf/dojo-cli
 
-> CLI tool for managing AI agent skills
+> CLI for managing AI agent skills
 
-## Installation
+[![npm version](https://img.shields.io/npm/v/@opensourcewtf/dojo-cli.svg)](https://www.npmjs.com/package/@opensourcewtf/dojo-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Install
 
 ```bash
 npm install -g @opensourcewtf/dojo-cli
@@ -52,4 +55,4 @@ await learn('@anthropics/create-docx', {
 
 ## License
 
-MIT
+[MIT](../../LICENSE) © OpenSourceWTF
