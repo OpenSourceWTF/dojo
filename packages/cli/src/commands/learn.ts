@@ -194,8 +194,11 @@ export async function learn(skill: string, options: LearnOptions = {}) {
   for (const r of resolved) {
     const entry = r.entry;
     const rawName = entry.path || entry.name || r.fqn.split('/').pop() || r.fqn;
-    // Ensure we use a flat filename (no subdirectories)
-    const skillName = rawName.split('/').pop() || rawName;
+    // Ensure we use a flat filename (no subdirectories) and strip .md if present
+    let skillName = rawName.split('/').pop() || rawName;
+    if (skillName.endsWith('.md')) {
+      skillName = skillName.slice(0, -3);
+    }
     const skillVersion = version || 'main';
 
     // Download to temp location first (Claude format is canonical)
