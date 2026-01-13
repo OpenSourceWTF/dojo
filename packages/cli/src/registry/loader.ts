@@ -8,10 +8,10 @@ import { readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-// Remote registry configuration
+// Remote registry configuration - using jsDelivr CDN (unlimited, globally cached)
 const REGISTRY_REPO = 'OpenSourceWTF/dojo-skills';
 const REGISTRY_BRANCH = 'main';
-const REGISTRY_BASE_URL = `https://raw.githubusercontent.com/${REGISTRY_REPO}/${REGISTRY_BRANCH}`;
+const REGISTRY_BASE_URL = `https://cdn.jsdelivr.net/gh/${REGISTRY_REPO}@${REGISTRY_BRANCH}`;
 
 // Cache configuration
 const CACHE_DIR = join(homedir(), '.dojo', 'cache');
