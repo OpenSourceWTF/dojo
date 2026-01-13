@@ -12,6 +12,7 @@ import { search } from './commands/search.js';
 import { list } from './commands/list.js';
 import { sync } from './commands/sync.js';
 import { unlearn } from './commands/unlearn.js';
+import { cache } from './commands/cache.js';
 
 const program = new Command();
 
@@ -47,4 +48,10 @@ program.command('unlearn')
   .option('-y, --yes', 'Skip confirmation')
   .action(unlearn);
 
+program.command('cache')
+  .description('Manage local cache')
+  .argument('<action>', 'Action: clean or info')
+  .action(cache);
+
 program.parse();
+
