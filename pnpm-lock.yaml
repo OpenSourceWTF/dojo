@@ -42,7 +42,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.1
         version: 1.25.2(hono@4.11.3)(zod@4.3.5)
-      '@opensourcewtf/dojo-cli':
+      '@opensourcewtf/dojo':
         specifier: workspace:*
         version: link:../cli
       hono:

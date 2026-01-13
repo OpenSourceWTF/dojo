@@ -12,7 +12,7 @@ import {
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { installSkill } from "@opensourcewtf/dojo-cli/lib/install.js";
+import { installSkill } from "@opensourcewtf/dojo/lib/install.js";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 
