@@ -207,8 +207,9 @@ export async function learn(skill: string, options: LearnOptions = {}) {
         version: skillVersion,
         destPath: primaryPath
       });
-    } catch (err) {
-      console.log(chalk.red(`\n❌ Failed to download ${r.fqn}: ${(err as Error).message}`));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(chalk.red(`\n❌ Failed to download ${r.fqn}: ${message}`));
       process.exit(1);
     }
 

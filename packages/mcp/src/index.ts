@@ -54,7 +54,7 @@ export async function handleDojoLearn(args: any) {
 
     const skillName = result.fqn || skill;
     let responseText = `I know kung fu! 🥋\n\nInstalled ${skillName} to:\n`;
-    
+
     for (const p of result.installedPaths) {
       responseText += `• ${p}\n`;
     }
@@ -67,12 +67,13 @@ export async function handleDojoLearn(args: any) {
         },
       ],
     };
-  } catch (error) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
       content: [
         {
           type: "text",
-          text: `Error: ${(error as Error).message}`,
+          text: `Error: ${message}`,
         },
       ],
       isError: true,

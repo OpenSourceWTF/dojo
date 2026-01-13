@@ -7,7 +7,7 @@ export interface DownloadOptions {
   destPath: string;  // where to write
 }
 
-export type SourceInfo = 
+export type SourceInfo =
   | { type: 'github'; owner: string; repo: string; path: string }
   | { type: 'file'; path: string };
 
@@ -33,7 +33,7 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
       // Retry 5xx or network errors
       if (res.status >= 500) throw new Error(`Fetch failed: ${res.status}`);
       return res; // Return 4xx errors
-    } catch (err) {
+    } catch (err: unknown) {
       lastError = err;
       if (i < retries - 1) {
         await new Promise(r => setTimeout(r, 1000 * (i + 1)));
@@ -46,7 +46,7 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
 
 export async function downloadSkill(options: DownloadOptions): Promise<void> {
   const parsed = parseSource(options.source);
-  
+
   // Strategy 0: Local file (Test/Dev)
   if (parsed.type === 'file') {
     await mkdir(dirname(options.destPath), { recursive: true });
@@ -69,7 +69,7 @@ export async function downloadSkill(options: DownloadOptions): Promise<void> {
       await writeFile(options.destPath, content);
       return;
     }
-  } catch (err) {
+  } catch (err: unknown) {
     // Continue to try directory method
   }
 

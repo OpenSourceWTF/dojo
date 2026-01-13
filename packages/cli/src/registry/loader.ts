@@ -70,11 +70,11 @@ async function loadRegistryDir(dirPath: string): Promise<Registry> {
           // We use the key as the map key.
           skills.set(key, skill);
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.warn(`Failed to parse registry file ${filePath}:`, err);
       }
     }
-  } catch (err) {
+  } catch (err: unknown) {
     // Directory might not exist, ignore
   }
 

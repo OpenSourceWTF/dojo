@@ -47,8 +47,9 @@ export async function removeSkill(locations: string[]): Promise<number> {
         }
         removed++;
       }
-    } catch (err) {
-      console.error(chalk.red(`Failed to remove ${location}: ${err}`));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`Failed to remove ${location}: ${message}`));
     }
   }
 

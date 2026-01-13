@@ -1,0 +1,457 @@
+diff --git a/packages/cli/src/commands/learn.ts b/packages/cli/src/commands/learn.ts
+index 7d1d89d..31264c7 100644
+--- a/packages/cli/src/commands/learn.ts
++++ b/packages/cli/src/commands/learn.ts
+@@ -187,7 +187,9 @@ export async function learn(skill: string, options: LearnOptions = {}) {
+ 
+   for (const r of resolved) {
+     const entry = r.entry;
+-    const skillName = entry.name || r.fqn.split('/').pop() || r.fqn;
++    const rawName = entry.path || entry.name || r.fqn.split('/').pop() || r.fqn;
++    // Ensure we use a flat filename (no subdirectories)
++    const skillName = rawName.split('/').pop() || rawName;
+     const skillVersion = version || 'main';
+ 
+     // Download to temp location first (Claude format is canonical)
+diff --git a/packages/cli/src/commands/list.ts b/packages/cli/src/commands/list.ts
+index 7d51dd9..a9c02d3 100644
+--- a/packages/cli/src/commands/list.ts
++++ b/packages/cli/src/commands/list.ts
+@@ -44,8 +44,10 @@ export function getInstalledSkills(projectRoot: string): InstalledSkills {
+ 
+ /**
+  * List installed skills per agent.
++ * Note: When called from Commander, the first argument is options object.
+  */
+-export async function list(projectRoot: string = process.cwd()): Promise<void> {
++export async function list(options?: any): Promise<void> {
++  const projectRoot = process.cwd();
+   const skills = getInstalledSkills(projectRoot);
+ 
+   console.log('Installed Skills:\n');
+diff --git a/packages/cli/src/commands/unlearn.ts b/packages/cli/src/commands/unlearn.ts
+index 0b1fdd3..1753427 100644
+--- a/packages/cli/src/commands/unlearn.ts
++++ b/packages/cli/src/commands/unlearn.ts
+@@ -61,8 +61,12 @@ export async function removeSkill(locations: string[]): Promise<number> {
+ export async function unlearn(
+   skill: string,
+   options: { yes?: boolean } = {},
+-  projectRoot: string = process.cwd()
++  commandOrRoot?: any
+ ): Promise<void> {
++  // If called from Commander, 3rd arg is Command object.
++  // If called programmatically, it might be projectRoot string.
++  const projectRoot = typeof commandOrRoot === 'string' ? commandOrRoot : process.cwd();
++
+   console.log(chalk.yellow(`🗑️  Removing "${skill}"...\n`));
+ 
+   const locations = findSkillLocations(projectRoot, skill);
+diff --git a/packages/cli/src/download/github.ts b/packages/cli/src/download/github.ts
+index 4bcba2f..6b90248 100644
+--- a/packages/cli/src/download/github.ts
++++ b/packages/cli/src/download/github.ts
+@@ -1,18 +1,26 @@
+-import { mkdir, writeFile } from 'node:fs/promises';
++import { mkdir, writeFile, copyFile, readFile } from 'node:fs/promises';
+ import { join, dirname } from 'node:path';
+ 
+ export interface DownloadOptions {
+-  source: string;    // "github:org/repo/path"
++  source: string;    // "github:org/repo/path" or "file:/absolute/path"
+   version?: string;  // commit hash or tag
+   destPath: string;  // where to write
+ }
+ 
+-export function parseSource(source: string): { owner: string; repo: string; path: string } {
++export type SourceInfo = 
++  | { type: 'github'; owner: string; repo: string; path: string }
++  | { type: 'file'; path: string };
++
++export function parseSource(source: string): SourceInfo {
++  if (source.startsWith('file:')) {
++    return { type: 'file', path: source.substring(5) };
++  }
++
+   const match = source.match(/^github:([^/]+)\/([^/]+)\/(.+)$/);
+   if (!match) {
+-    throw new Error(`Invalid GitHub source format: ${source}. Expected github:owner/repo/path`);
++    throw new Error(`Invalid source format: ${source}. Expected github:owner/repo/path or file:/path`);
+   }
+-  return { owner: match[1], repo: match[2], path: match[3] };
++  return { type: 'github', owner: match[1], repo: match[2], path: match[3] };
+ }
+ 
+ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
+@@ -37,7 +45,16 @@ async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
+ }
+ 
+ export async function downloadSkill(options: DownloadOptions): Promise<void> {
+-  const { owner, repo, path: srcPath } = parseSource(options.source);
++  const parsed = parseSource(options.source);
++  
++  // Strategy 0: Local file (Test/Dev)
++  if (parsed.type === 'file') {
++    await mkdir(dirname(options.destPath), { recursive: true });
++    await copyFile(parsed.path, options.destPath);
++    return;
++  }
++
++  const { owner, repo, path: srcPath } = parsed;
+   const version = options.version || 'main';
+ 
+   // Strategy 1: Try as single file (Raw API)
+diff --git a/packages/cli/src/index.ts b/packages/cli/src/index.ts
+index c3e787c..41e251f 100644
+--- a/packages/cli/src/index.ts
++++ b/packages/cli/src/index.ts
+@@ -35,6 +35,7 @@ program.command('sync')
+ program.command('unlearn')
+   .description('Remove a skill')
+   .argument('<skill>', 'Skill name to remove')
++  .option('-y, --yes', 'Skip confirmation')
+   .action(unlearn);
+ 
+ program.parse();
+diff --git a/packages/cli/src/lib/install.ts b/packages/cli/src/lib/install.ts
+new file mode 100644
+index 0000000..3e5aa58
+--- /dev/null
++++ b/packages/cli/src/lib/install.ts
+@@ -0,0 +1,185 @@
++import { searchRegistry, loadRegistry, SkillEntry } from '../registry/index.js';
++import { resolveSkill, detectCycle } from '../resolver/dependencies.js';
++import { downloadSkill } from '../download/github.js';
++import { detectAgents, DetectedAgent } from '../agents/detector.js';
++import { join } from 'node:path';
++import { mkdir, writeFile, readFile } from 'node:fs/promises';
++
++export interface InstallResult {
++  success: boolean;
++  message: string;
++  installedPaths: string[];
++  fqn?: string;
++}
++
++export interface InstallOptions {
++  registryPath?: string;
++  projectRoot?: string;
++  version?: string;
++}
++
++/**
++ * Parse skill input like "kungfu", "kungfu@1.0.0", or "@anthropics/create-docx"
++ */
++export function parseSkillInput(input: string): { name: string; version?: string } {
++  const atIndex = input.lastIndexOf('@');
++
++  if (atIndex > 0) {
++    const name = input.substring(0, atIndex);
++    const version = input.substring(atIndex + 1);
++    return { name, version };
++  }
++
++  return { name: input };
++}
++
++/**
++ * Write skill to a specific agent directory
++ */
++export async function writeSkillToAgent(
++  agent: DetectedAgent,
++  skillName: string,
++  content: string
++): Promise<string> {
++  let destPath: string;
++
++  switch (agent.format) {
++    case 'flat-md':
++      destPath = join(agent.path, `${skillName}.md`);
++      await mkdir(agent.path, { recursive: true });
++      await writeFile(destPath, content);
++      break;
++
++    case 'folder-rule':
++      const folderPath = join(agent.path, skillName);
++      destPath = join(folderPath, 'RULE.md');
++      await mkdir(folderPath, { recursive: true });
++
++      const lines = content.split('\n');
++      let description = 'Imported from dojo';
++      if (lines.length > 0 && lines[0].trim().length > 0) {
++        description = lines[0].trim().replace(/^#\s*/, '');
++      }
++
++      const cursorContent = `---
++name: ${skillName}
++alwaysApply: false
++description: ${description}
++---
++
++${content}`;
++      await writeFile(destPath, cursorContent);
++      break;
++
++    default:
++      throw new Error(`Unknown agent format: ${agent.format}`);
++  }
++
++  return destPath;
++}
++
++export async function installSkill(
++  skillQuery: string,
++  options: InstallOptions = {}
++): Promise<InstallResult> {
++  const projectRoot = options.projectRoot || process.cwd();
++  const registryPath = options.registryPath || join(projectRoot, 'registry');
++
++  // 1. Search registry
++  const results = await searchRegistry(skillQuery, registryPath);
++
++  if (results.length === 0) {
++    return {
++      success: false,
++      message: `No skills found matching "${skillQuery}"`, 
++      installedPaths: []
++    };
++  }
++
++  // If multiple results and no exact match, we need the caller to decide
++  const exactMatch = results.find(r => r.fqn === skillQuery || r.fqn.endsWith(`/${skillQuery}`));
++  
++  let selectedFqn: string;
++  if (exactMatch) {
++    selectedFqn = exactMatch.fqn;
++  } else if (results.length === 1) {
++    selectedFqn = results[0].fqn;
++  } else {
++    return {
++      success: false,
++      message: `Multiple skills found: ${results.map(r => r.fqn).join(', ')}. Please be more specific.`, 
++      installedPaths: []
++    };
++  }
++
++  // 2. Resolve dependencies
++  const registry = await loadRegistry(registryPath);
++  const cycle = detectCycle(selectedFqn, registry);
++  if (cycle) {
++    return {
++      success: false,
++      message: `Circular dependency detected: ${cycle.join(' -> ')}`, 
++      installedPaths: []
++    };
++  }
++
++  const resolved = resolveSkill(selectedFqn, registry);
++
++  // 3. Detect agents
++  const agents = detectAgents(projectRoot);
++  if (agents.length === 0) {
++    const claudePath = join(projectRoot, '.claude', 'skills');
++    await mkdir(claudePath, { recursive: true });
++    agents.push({ name: 'claude', path: claudePath, format: 'flat-md' });
++  }
++
++  // 4. Download and install
++  const installedPaths: string[] = [];
++
++  for (const r of resolved) {
++    const entry = r.entry;
++    const rawName = entry.path || entry.name || r.fqn.split('/').pop() || r.fqn;
++    const skillName = rawName.split('/').pop() || rawName;
++    const skillVersion = options.version || 'main';
++
++    const claudeAgent = agents.find(a => a.name === 'claude');
++    const primaryPath = claudeAgent
++      ? join(claudeAgent.path, `${skillName}.md`)
++      : join(projectRoot, '.claude', 'skills', `${skillName}.md`);
++
++    await mkdir(join(projectRoot, '.claude', 'skills'), { recursive: true });
++
++    try {
++      await downloadSkill({
++        source: entry.source,
++        version: skillVersion,
++        destPath: primaryPath
++      });
++    } catch (err) {
++      return {
++        success: false,
++        message: `Failed to download ${r.fqn}: ${(err as Error).message}`, 
++        installedPaths
++      };
++    }
++
++    const content = await readFile(primaryPath, 'utf-8');
++
++    for (const agent of agents) {
++      if (agent.name === 'claude') {
++        installedPaths.push(primaryPath.replace(projectRoot + '/', ''));
++        continue;
++      }
++
++      const destPath = await writeSkillToAgent(agent, skillName, content);
++      installedPaths.push(destPath.replace(projectRoot + '/', ''));
++    }
++  }
++
++  return {
++    success: true,
++    message: `Successfully installed ${selectedFqn}`, 
++    installedPaths,
++    fqn: selectedFqn
++  };
++}
+diff --git a/packages/cli/test/downloader.test.ts b/packages/cli/test/downloader.test.ts
+index 14a89dd..b394314 100644
+--- a/packages/cli/test/downloader.test.ts
++++ b/packages/cli/test/downloader.test.ts
+@@ -22,7 +22,12 @@ describe('GitHub Downloader', () => {
+   describe('parseSource', () => {
+     it('should parse valid github source', () => {
+       const res = parseSource('github:org/repo/folder/file.md');
+-      expect(res).toEqual({ owner: 'org', repo: 'repo', path: 'folder/file.md' });
++      expect(res).toEqual({ type: 'github', owner: 'org', repo: 'repo', path: 'folder/file.md' });
++    });
++
++    it('should parse local file source', () => {
++      const res = parseSource('file:/tmp/skill.md');
++      expect(res).toEqual({ type: 'file', path: '/tmp/skill.md' });
+     });
+ 
+     it('should throw on invalid format', () => {
+diff --git a/packages/cli/tests/e2e/cli-install.test.ts b/packages/cli/tests/e2e/cli-install.test.ts
+new file mode 100644
+index 0000000..cf28b5d
+--- /dev/null
++++ b/packages/cli/tests/e2e/cli-install.test.ts
+@@ -0,0 +1,127 @@
++import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
++import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
++import { join } from 'node:path';
++import { tmpdir } from 'node:os';
++import { exec } from 'node:child_process';
++import { promisify } from 'node:util';
++
++const execAsync = promisify(exec);
++
++// Path to the CLI executable
++// Assuming we run tests from packages/cli/ or root
++const CLI_PATH = join(process.cwd(), 'dist/index.js');
++
++describe('E2E: CLI Install Flow', () => {
++  let tmpRoot: string;
++  let registryPath: string;
++  let fixturesPath: string;
++
++  beforeAll(async () => {
++    // Ensure CLI is built
++    // await execAsync('pnpm build'); // Assuming it's already built or handled by pipeline
++  });
++
++  beforeEach(async () => {
++    // 1. Create temp directory
++    tmpRoot = join(tmpdir(), 'dojo-e2e-' + Date.now());
++    await mkdir(tmpRoot, { recursive: true });
++
++    // 2. Setup directory structure
++    registryPath = join(tmpRoot, 'registry');
++    fixturesPath = join(tmpRoot, 'fixtures');
++    await mkdir(join(registryPath, 'official'), { recursive: true });
++    await mkdir(fixturesPath, { recursive: true });
++    await mkdir(join(tmpRoot, '.claude/skills'), { recursive: true });
++    await mkdir(join(tmpRoot, '.agent/workflows'), { recursive: true });
++
++    // 3. Create mock skill fixture
++    const skillContent = '# Test Skill\nThis is a test skill.';
++    const skillPath = join(fixturesPath, 'skill.md');
++    await writeFile(skillPath, skillContent);
++
++    // 4. Create registry file
++    const registryContent = {
++      _meta: { source: 'test', updated: '2026-01-01', priority: 100 },
++      skills: {
++        '@test/create-docx': {
++          name: 'Create Word Documents',
++          path: 'create-docx',
++          source: `file:${skillPath}`,
++          aliases: ['word', 'docx', 'document'],
++          description: 'Create and edit Microsoft Word documents',
++          tags: ['documents', 'office', 'productivity'],
++          versions: {
++            '1.0.0': 'a1b2c3d4',
++            latest: 'a1b2c3d4'
++          }
++        }
++      }
++    };
++    await writeFile(
++      join(registryPath, 'official', 'test.json'),
++      JSON.stringify(registryContent, null, 2)
++    );
++  });
++
++  afterEach(async () => {
++    await rm(tmpRoot, { recursive: true, force: true });
++  });
++
++  async function runDojo(args: string) {
++    // Run dojo command in the temp directory
++    // We pass registry path via environment variable or just place it in cwd
++    // Learn command defaults to cwd/registry if not specified.
++    return execAsync(`node ${CLI_PATH} ${args}`, {
++      cwd: tmpRoot,
++      env: { ...process.env, FORCE_COLOR: '0' } // Disable color for easier parsing
++    });
++  }
++
++  it('should search for a skill', async () => {
++    const { stdout } = await runDojo('search docx');
++    expect(stdout).toContain('@test/create-docx');
++    // The search output currently shows FQN and Description
++    expect(stdout).toContain('Create and edit Microsoft Word documents');
++  });
++
++  it('should install a skill to all agents', async () => {
++    const { stdout } = await runDojo('learn @test/create-docx');
++    
++    expect(stdout).toContain('Installing @test/create-docx');
++    expect(stdout).toContain('Installed to:');
++
++    // Verify file existence
++    const claudePath = join(tmpRoot, '.claude/skills/create-docx.md');
++    const geminiPath = join(tmpRoot, '.agent/workflows/create-docx.md');
++    
++    expect(await readFile(claudePath, 'utf-8')).toContain('# Test Skill');
++    expect(await readFile(geminiPath, 'utf-8')).toContain('# Test Skill');
++  });
++
++  it('should list installed skills', async () => {
++    // Install first
++    await runDojo('learn @test/create-docx');
++
++    const { stdout } = await runDojo('list');
++    
++    expect(stdout).toContain('Claude');
++    expect(stdout).toContain('create-docx');
++    expect(stdout).toContain('Gemini');
++  });
++
++  it('should unlearn a skill', async () => {
++    // Install first
++    await runDojo('learn @test/create-docx');
++    
++    // Verify installed
++    let claudePath = join(tmpRoot, '.claude/skills/create-docx.md');
++    expect(await readFile(claudePath, 'utf-8')).toBeTruthy();
++
++    // Unlearn
++    const { stdout } = await runDojo('unlearn create-docx -y'); // -y to skip confirmation if implemented
++    // Note: unlearn command implementation needs to be checked if it prompts
++    
++    // Verify removed
++    await expect(readFile(claudePath)).rejects.toThrow();
++  });
++});

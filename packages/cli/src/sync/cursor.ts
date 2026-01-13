@@ -63,8 +63,8 @@ export async function syncClaudeToCursor(projectRoot: string, options: SyncOptio
         skipped.push(file);
       }
     }
-  } catch (error) {
-    if ((error as any).code === 'ENOENT') {
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
       return { synced, skipped };
     }
     throw error;
