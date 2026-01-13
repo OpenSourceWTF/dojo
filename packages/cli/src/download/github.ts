@@ -79,27 +79,43 @@ export async function downloadSkill(options: DownloadOptions): Promise<void> {
     // Continue to try directory method
   }
 
-  // Strategy 2: Try as directory (API)
+  // Strategy 2: Try as directory containing SKILL.md
+  // First try to fetch SKILL.md directly from the directory
+  const skillMdUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${version}/${srcPath}/SKILL.md`;
+
+  try {
+    const skillRes = await fetchWithRetry(skillMdUrl);
+    if (skillRes.ok) {
+      const content = await skillRes.text();
+      await mkdir(dirname(options.destPath), { recursive: true });
+      await writeFile(options.destPath, content);
+      return;
+    }
+  } catch (err: unknown) {
+    // Continue to try API fallback
+  }
+
+  // Strategy 3: Use GitHub API to find a markdown file in the directory
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${srcPath}?ref=${version}`;
   const apiRes = await fetchWithRetry(apiUrl);
 
   if (apiRes.ok) {
     const data = await apiRes.json();
     if (Array.isArray(data)) {
-      await mkdir(options.destPath, { recursive: true });
+      // Look for SKILL.md or any .md file
+      const skillFile = data.find((item: { name: string; type: string }) =>
+        item.type === 'file' && (item.name === 'SKILL.md' || item.name.toLowerCase().endsWith('.md'))
+      );
 
-      for (const item of data) {
-        if (item.type === 'file' && item.download_url) {
-          const itemRes = await fetchWithRetry(item.download_url);
-          if (itemRes.ok) {
-            const text = await itemRes.text();
-            await writeFile(join(options.destPath, item.name), text);
-          }
+      if (skillFile && skillFile.download_url) {
+        const itemRes = await fetchWithRetry(skillFile.download_url);
+        if (itemRes.ok) {
+          const content = await itemRes.text();
+          await mkdir(dirname(options.destPath), { recursive: true });
+          await writeFile(options.destPath, content);
+          return;
         }
-        // Note: Recursive directory download would need recursion here.
-        // For basic skill bundles (flat), this works.
       }
-      return;
     }
   }
 
