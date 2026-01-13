@@ -5,27 +5,25 @@
  */
 
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { execSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
 import chalk from 'chalk';
 import { McpServerConfig } from '../registry/loader.js';
+import { plugins } from '../agents/plugins/index.js';
+import type { McpConfig, AgentPlugin } from '../agents/plugin.js';
+import { prompt } from '../utils/prompt.js';
 
-// Agent MCP config definitions
-interface AgentMcpConfig {
-  name: string;
-  cli: string;           // CLI command to check for
-  path: string;
-  format: 'json' | 'toml';
-  key: string; // Root key for MCP servers (e.g., 'mcpServers')
+/**
+ * Check if a file exists.
+ */
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
-
-const AGENT_MCP_CONFIGS: AgentMcpConfig[] = [
-  { name: 'Claude', cli: 'claude', path: join(homedir(), '.claude', 'claude_desktop_config.json'), format: 'json', key: 'mcpServers' },
-  { name: 'Gemini', cli: 'gemini', path: join(homedir(), '.gemini', 'settings.json'), format: 'json', key: 'mcpServers' },
-  { name: 'Antigravity', cli: 'gemini', path: join(homedir(), '.gemini', 'antigravity', 'mcp_config.json'), format: 'json', key: 'mcpServers' },
-  { name: 'Codex', cli: 'codex', path: join(homedir(), '.codex', 'config.toml'), format: 'toml', key: 'mcp_servers' },
-];
 
 /**
  * Check if a CLI command exists in PATH.
@@ -40,15 +38,17 @@ function cliExists(command: string): boolean {
 }
 
 /**
- * Check if a file exists.
+ * Get CLI command for a plugin (based on agent name).
  */
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
+function getCliCommand(pluginName: string): string {
+  const cliMap: Record<string, string> = {
+    'claude': 'claude',
+    'gemini': 'gemini',
+    'antigravity': 'gemini',
+    'codex': 'codex',
+    'cursor': 'cursor'
+  };
+  return cliMap[pluginName] || pluginName;
 }
 
 /**
@@ -102,11 +102,11 @@ ${server.env ? `env = ${JSON.stringify(server.env)}` : ''}
 `;
   return raw + section;
 }
-import { prompt } from '../utils/prompt.js';
 
 /**
  * Prompt user for required environment variables.
  * Defaults to existing environment values if available.
+ * If user skips and no value exists, uses ${env:VAR_NAME} format.
  */
 async function promptForEnvVars(serverName: string, envTemplate: Record<string, string>): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
@@ -119,7 +119,7 @@ async function promptForEnvVars(serverName: string, envTemplate: Record<string, 
 
     let promptText: string;
     if (isPlaceholder) {
-      promptText = `     ${key}: `;
+      promptText = `     ${key} (skip to use \${env:${key}}): `;
     } else {
       // Show masked default for sensitive values
       const masked = key.toLowerCase().includes('key') || key.toLowerCase().includes('secret')
@@ -129,61 +129,76 @@ async function promptForEnvVars(serverName: string, envTemplate: Record<string, 
     }
 
     const value = await prompt(promptText);
-    result[key] = value || defaultValue || '';
+
+    // If user skips and no default, use ${env:KEY} format
+    if (!value && !defaultValue) {
+      result[key] = `\${env:${key}}`;
+    } else {
+      result[key] = value || defaultValue || `\${env:${key}}`;
+    }
   }
 
   return result;
 }
 
 /**
- * Add MCP servers to a specific agent's config.
+ * Add MCP servers to a specific plugin's config.
  * Returns { added: string[], skipped: string[] }
  */
-async function addServersToAgent(agent: AgentMcpConfig, servers: McpServerConfig[], resolvedEnvs: Map<string, Record<string, string>>): Promise<{ added: string[]; skipped: string[] }> {
+async function addServersToPlugin(
+  plugin: AgentPlugin,
+  servers: McpServerConfig[],
+  resolvedEnvs: Map<string, Record<string, string>>
+): Promise<{ added: string[]; skipped: string[] }> {
   const added: string[] = [];
   const skipped: string[] = [];
 
-  if (agent.format === 'json') {
-    const config = await loadJsonConfig(agent.path);
-    const mcpServers = (config[agent.key] as Record<string, unknown>) || {};
+  const mcpConfig = plugin.mcpConfig;
+  if (!mcpConfig) return { added, skipped };
+
+  if (mcpConfig.format === 'json') {
+    const config = await loadJsonConfig(mcpConfig.path);
+    const mcpServers = (config[mcpConfig.key] as Record<string, unknown>) || {};
 
     for (const server of servers) {
       if (mcpServers[server.name]) {
         skipped.push(server.name);
-        continue; // Already exists
+        continue;
       }
 
-      const env = resolvedEnvs.get(server.name);
+      const env = resolvedEnvs.get(server.name) || {};
+
       mcpServers[server.name] = {
         command: server.command,
         args: server.args,
-        ...(env && Object.keys(env).length > 0 && { env })
+        ...(Object.keys(env).length > 0 ? { env } : {})
       };
       added.push(server.name);
     }
 
     if (added.length > 0) {
-      config[agent.key] = mcpServers;
-      await saveJsonConfig(agent.path, config);
+      config[mcpConfig.key] = mcpServers;
+      await saveJsonConfig(mcpConfig.path, config);
     }
-  } else if (agent.format === 'toml') {
-    let { raw, servers: existingServers } = await loadTomlConfig(agent.path);
+  } else if (mcpConfig.format === 'toml') {
+    let { raw, servers: existing } = await loadTomlConfig(mcpConfig.path);
 
     for (const server of servers) {
-      if (existingServers[server.name]) {
+      if (existing[server.name]) {
         skipped.push(server.name);
-        continue; // Already exists
+        continue;
       }
 
-      const env = resolvedEnvs.get(server.name);
-      const serverWithEnv = { ...server, env };
+      const env = resolvedEnvs.get(server.name) || {};
+      const serverWithEnv = { ...server, env: { ...server.env, ...env } };
+
       raw = addServerToToml(raw, serverWithEnv);
       added.push(server.name);
     }
 
     if (added.length > 0) {
-      await mkdir(dirname(agent.path), { recursive: true });
-      await writeFile(agent.path, raw);
+      await mkdir(dirname(mcpConfig.path), { recursive: true });
+      await writeFile(mcpConfig.path, raw);
     }
   }
 
@@ -191,7 +206,8 @@ async function addServersToAgent(agent: AgentMcpConfig, servers: McpServerConfig
 }
 
 /**
- * Add MCP servers to ALL detected agent configs.
+ * Add MCP servers to ALL agent configs that have mcpConfig defined.
+ * Uses the plugin system for MCP config paths.
  * 
  * @param servers - Array of MCP server configurations to add
  * @returns Record of agent names to arrays of added server names
@@ -213,20 +229,25 @@ export async function addMcpServersToConfig(servers: McpServerConfig[]): Promise
 
   const results: Record<string, string[]> = {};
 
-  for (const agent of AGENT_MCP_CONFIGS) {
-    // Check if agent CLI is installed
-    if (!cliExists(agent.cli)) {
-      continue; // Skip agents that aren't installed
+  // Use plugin system - iterate over plugins with mcpConfig
+  for (const plugin of plugins) {
+    if (!plugin.mcpConfig) continue;
+
+    // Check if agent CLI is installed (use plugin.cli if defined)
+    const cli = plugin.cli || plugin.name;
+    if (!cliExists(cli)) {
+      console.log(chalk.gray(`   ⏭ ${plugin.displayName}: skipped (${cli} not found)`));
+      continue;
     }
 
-    const { added, skipped } = await addServersToAgent(agent, servers, resolvedEnvs);
+    const { added, skipped } = await addServersToPlugin(plugin, servers, resolvedEnvs);
     if (added.length > 0) {
-      results[agent.name] = added;
-      console.log(chalk.green(`   ✓ ${agent.name}: ${added.join(', ')}`));
-      console.log(chalk.gray(`     → ${agent.path}`));
+      results[plugin.displayName] = added;
+      console.log(chalk.green(`   ✓ ${plugin.displayName}: ${added.join(', ')}`));
+      console.log(chalk.gray(`     → ${plugin.mcpConfig.path}`));
     }
     if (skipped.length > 0) {
-      console.log(chalk.gray(`   ⏭ ${agent.name}: ${skipped.join(', ')} (already configured)`));
+      console.log(chalk.gray(`   ⏭ ${plugin.displayName}: ${skipped.join(', ')} (already configured)`));
     }
   }
 
@@ -235,22 +256,26 @@ export async function addMcpServersToConfig(servers: McpServerConfig[]): Promise
 
 /**
  * List currently configured MCP servers from all agent configs.
+ * Uses the plugin system for MCP config paths.
  */
 export async function listMcpServers(): Promise<Record<string, Record<string, unknown>>> {
   const results: Record<string, Record<string, unknown>> = {};
 
-  for (const agent of AGENT_MCP_CONFIGS) {
-    if (await fileExists(agent.path)) {
-      if (agent.format === 'json') {
-        const config = await loadJsonConfig(agent.path);
-        const servers = config[agent.key] as Record<string, unknown>;
+  for (const plugin of plugins) {
+    if (!plugin.mcpConfig) continue;
+
+    const mcpConfig = plugin.mcpConfig;
+    if (await fileExists(mcpConfig.path)) {
+      if (mcpConfig.format === 'json') {
+        const config = await loadJsonConfig(mcpConfig.path);
+        const servers = config[mcpConfig.key] as Record<string, unknown>;
         if (servers && Object.keys(servers).length > 0) {
-          results[agent.name] = servers;
+          results[plugin.displayName] = servers;
         }
-      } else if (agent.format === 'toml') {
-        const { servers } = await loadTomlConfig(agent.path);
+      } else if (mcpConfig.format === 'toml') {
+        const { servers } = await loadTomlConfig(mcpConfig.path);
         if (Object.keys(servers).length > 0) {
-          results[agent.name] = servers;
+          results[plugin.displayName] = servers;
         }
       }
     }
@@ -261,27 +286,87 @@ export async function listMcpServers(): Promise<Record<string, Record<string, un
 
 /**
  * Remove an MCP server from all agent configs.
+ * Uses the plugin system for MCP config paths.
  * Returns array of { agent, path } for removed entries.
  */
 export async function removeMcpServer(name: string): Promise<Array<{ agent: string; path: string }>> {
   const removed: Array<{ agent: string; path: string }> = [];
 
-  for (const agent of AGENT_MCP_CONFIGS) {
-    if (!(await fileExists(agent.path))) continue;
+  for (const plugin of plugins) {
+    if (!plugin.mcpConfig) continue;
 
-    if (agent.format === 'json') {
-      const config = await loadJsonConfig(agent.path);
-      const servers = config[agent.key] as Record<string, unknown>;
+    const mcpConfig = plugin.mcpConfig;
+    if (!(await fileExists(mcpConfig.path))) continue;
+
+    if (mcpConfig.format === 'json') {
+      const config = await loadJsonConfig(mcpConfig.path);
+      const servers = config[mcpConfig.key] as Record<string, unknown>;
 
       if (servers && servers[name]) {
         delete servers[name];
-        await saveJsonConfig(agent.path, config);
-        removed.push({ agent: agent.name, path: agent.path });
+        await saveJsonConfig(mcpConfig.path, config);
+        removed.push({ agent: plugin.displayName, path: mcpConfig.path });
       }
     }
     // TOML removal is more complex, skip for now
   }
 
   return removed;
+}
+
+/**
+ * Get configured MCP servers for a plugin.
+ * Returns array of server names and their configuration.
+ */
+interface ConfiguredMcpServer {
+  name: string;
+  command?: string;
+  args?: string[];
+  agent: string;
+  configPath: string;
+}
+
+/**
+ * Get all configured MCP servers across all agents.
+ * Reads from each plugin's MCP config file.
+ */
+export async function getConfiguredMcpServers(): Promise<ConfiguredMcpServer[]> {
+  const servers: ConfiguredMcpServer[] = [];
+
+  for (const plugin of plugins) {
+    if (!plugin.mcpConfig) continue;
+
+    const mcpConfig = plugin.mcpConfig;
+    if (!(await fileExists(mcpConfig.path))) continue;
+
+    if (mcpConfig.format === 'json') {
+      const config = await loadJsonConfig(mcpConfig.path);
+      const mcpServers = config[mcpConfig.key] as Record<string, Record<string, unknown>> | undefined;
+
+      if (mcpServers && typeof mcpServers === 'object') {
+        for (const [name, serverConfig] of Object.entries(mcpServers)) {
+          servers.push({
+            name,
+            command: serverConfig.command as string | undefined,
+            args: serverConfig.args as string[] | undefined,
+            agent: plugin.displayName,
+            configPath: mcpConfig.path
+          });
+        }
+      }
+    } else if (mcpConfig.format === 'toml') {
+      // Parse TOML for server names
+      const { servers: tomlServers } = await loadTomlConfig(mcpConfig.path);
+      for (const name of Object.keys(tomlServers)) {
+        servers.push({
+          name,
+          agent: plugin.displayName,
+          configPath: mcpConfig.path
+        });
+      }
+    }
+  }
+
+  return servers;
 }
 

@@ -6,6 +6,8 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { claudePlugin } from '../agents/plugins/claude.js';
+import { cursorPlugin } from '../agents/plugins/cursor.js';
 
 interface SyncOptions {
   force?: boolean;
@@ -62,47 +64,31 @@ ${content}`;
 
 /**
  * Batch sync all Claude skills to Cursor rules.
- * - Source: .claude/skills/{skill}/SKILL.md (folder-skill format)
- * - Dest: .cursor/rules/{skill}/RULE.md
+ * Uses plugin system for source and destination paths.
  */
 export async function syncClaudeToCursor(
   projectRoot: string,
   options: SyncOptions = {}
 ): Promise<{ synced: string[]; skipped: string[] }> {
-  const skillsDir = path.join(projectRoot, '.claude/skills');
+  // Use plugin system for paths
+  const skillsDir = path.join(projectRoot, claudePlugin.agentDir);
   const synced: string[] = [];
   const skipped: string[] = [];
 
   try {
-    const entries = await fs.readdir(skillsDir);
+    // Use Claude plugin to list skills
+    const skillNames = claudePlugin.listSkills(projectRoot);
 
-    for (const entry of entries) {
-      const entryPath = path.join(skillsDir, entry);
+    for (const skillName of skillNames) {
+      const sourcePath = claudePlugin.getSkillPath(projectRoot, skillName);
+      const destPath = cursorPlugin.getSkillPath(projectRoot, skillName);
 
-      // Check if it's a directory
-      const stat = await fs.stat(entryPath);
-      if (!stat.isDirectory()) {
-        skipped.push(entry);
-        continue;
-      }
-
-      // Check for SKILL.md inside the directory
-      const skillFilePath = path.join(entryPath, 'SKILL.md');
-      try {
-        await fs.access(skillFilePath);
-      } catch {
-        skipped.push(entry);
-        continue;
-      }
-
-      // Sync the skill
-      const destPath = path.join(projectRoot, '.cursor/rules', entry, 'RULE.md');
-      const wasSynced = await claudeToCursor(skillFilePath, destPath, options);
+      const wasSynced = await claudeToCursor(sourcePath, destPath, options);
 
       if (wasSynced) {
-        synced.push(entry);
+        synced.push(skillName);
       } else {
-        skipped.push(entry);
+        skipped.push(skillName);
       }
     }
   } catch (error: unknown) {

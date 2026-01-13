@@ -171,13 +171,15 @@ export async function installSkill(
     const resolved = resolveSkill(fqn, registry);
 
     // Detect agents
-    let agents = detectAgents(projectRoot);
+    const agents = detectAgents(projectRoot);
 
-    // If no agents detected, create .claude/skills by default
+    // If no agents detected, return early
     if (agents.length === 0) {
-      const claudePath = join(projectRoot, '.claude', 'skills');
-      await mkdir(claudePath, { recursive: true });
-      agents = detectAgents(projectRoot);
+      return {
+        success: false,
+        message: 'No AI agent directories detected. Install an agent CLI first (claude, gemini, cursor, codex).',
+        installedPaths: [],
+      };
     }
 
     // Determine skills directory

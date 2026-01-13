@@ -4,7 +4,7 @@
  * See LICENSE file for details.
  */
 
-import { existsSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, rmSync, readdirSync, statSync, lstatSync } from 'node:fs';
 import { mkdir, symlink } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { SkillFormatPlugin, FormatInstallOptions, FormatRemoveOptions } from '../format-plugin.js';
@@ -12,6 +12,8 @@ import { SkillFormatPlugin, FormatInstallOptions, FormatRemoveOptions } from '..
 /**
  * Folder skill format: {baseDir}/{skill}/SKILL.md
  * Used by: Claude (.claude/skills/), Gemini (.gemini/skills/), Codex (.codex/skills/)
+ * 
+ * This is the CANONICAL format in the hub-and-spoke model.
  */
 export const folderSkillPlugin: SkillFormatPlugin = {
   name: 'folder-skill',
@@ -37,8 +39,12 @@ export const folderSkillPlugin: SkillFormatPlugin = {
 
     await mkdir(skillDir, { recursive: true });
 
-    if (existsSync(destPath)) {
-      rmSync(destPath);
+    // Remove existing file/symlink if it exists (lstatSync catches broken symlinks too)
+    try {
+      lstatSync(destPath);
+      rmSync(destPath, { force: true });
+    } catch {
+      // File doesn't exist, which is fine
     }
 
     const relPath = relative(skillDir, sourcePath);
@@ -61,5 +67,14 @@ export const folderSkillPlugin: SkillFormatPlugin = {
       }
     }
     return false;
+  },
+
+  // Hub-and-spoke conversion: folder-skill IS the canonical format
+  toCanonical(content: string, _skillName: string): string {
+    return content; // Already canonical
+  },
+
+  fromCanonical(content: string, _skillName: string): string {
+    return content; // Already canonical
   }
 };

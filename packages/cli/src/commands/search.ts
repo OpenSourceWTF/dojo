@@ -9,6 +9,7 @@ import { loadRegistry, SkillEntry } from '../registry/loader.js';
 
 interface SearchOptions {
   registry?: string;  // Local path or github:owner/repo URL
+  mcpMode?: boolean;  // Search for MCP servers only (modal)
 }
 
 /**
@@ -70,12 +71,27 @@ export async function search(term: string, options: SearchOptions = {}) {
     }
   }
 
+  // Modal filtering: --mcp shows only MCPs, default shows only skills
+  let filteredResults = results;
+  if (options.mcpMode) {
+    // MCP mode: only skills with mcp_servers
+    filteredResults = results.filter(r =>
+      r.skill.mcp_servers && r.skill.mcp_servers.length > 0
+    );
+  } else {
+    // Default mode: exclude MCP-only entries (keep skills without mcp_servers, or skills that have both)
+    filteredResults = results.filter(r =>
+      !r.skill.mcp_servers || r.skill.mcp_servers.length === 0
+    );
+  }
+
   // Sort by score DESC
-  results.sort((a, b) => b.score - a.score);
+  filteredResults.sort((a, b) => b.score - a.score);
 
-  console.log(`Found ${results.length} skills matching "${term}":\n`);
+  const label = options.mcpMode ? 'MCP servers' : 'skills';
+  console.log(`Found ${filteredResults.length} ${label} matching "${term}":\n`);
 
-  for (const res of results) {
+  for (const res of filteredResults) {
     const org = extractOrg(res.fqn, res.skill.source);
     const orgLabel = org ? chalk.gray(`[${org}] `) : '';
     const highlightedFqn = highlightTerm(res.fqn, term);

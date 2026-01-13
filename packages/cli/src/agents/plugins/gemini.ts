@@ -4,15 +4,23 @@
  * See LICENSE file for details.
  */
 
-import { createAgentPlugin, AgentPlugin } from '../plugin.js';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { createAgentPlugin } from '../plugin.js';
 
 /**
- * Gemini agent plugin using folder-skill format.
+ * Gemini agent plugin.
  * Skills are stored in .gemini/skills/{skill}/SKILL.md
  */
-export const geminiPlugin: AgentPlugin = createAgentPlugin({
+export const geminiPlugin = createAgentPlugin({
   name: 'gemini',
   displayName: 'Gemini',
   format: 'folder-skill',
-  agentDir: '.gemini/skills'
+  agentDir: '.gemini/skills',
+  cli: 'gemini',
+  mcpConfig: {
+    path: join(homedir(), '.gemini', 'settings.json'),
+    format: 'json',
+    key: 'mcpServers'
+  }
 });

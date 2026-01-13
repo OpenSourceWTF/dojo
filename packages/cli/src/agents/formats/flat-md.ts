@@ -4,7 +4,7 @@
  * See LICENSE file for details.
  */
 
-import { existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, rmSync, mkdirSync, readdirSync, lstatSync } from 'node:fs';
 import { symlink } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { SkillFormatPlugin, FormatInstallOptions, FormatRemoveOptions } from '../format-plugin.js';
@@ -34,8 +34,12 @@ export const flatMdPlugin: SkillFormatPlugin = {
 
     mkdirSync(dirname(destPath), { recursive: true });
 
-    if (existsSync(destPath)) {
-      rmSync(destPath);
+    // Remove existing file/symlink if it exists (lstatSync catches broken symlinks too)
+    try {
+      lstatSync(destPath);
+      rmSync(destPath, { force: true });
+    } catch {
+      // File doesn't exist, which is fine
     }
 
     const relPath = relative(dirname(destPath), sourcePath);
@@ -57,5 +61,14 @@ export const flatMdPlugin: SkillFormatPlugin = {
       }
     }
     return false;
+  },
+
+  // Hub-and-spoke conversion: flat-md is identical to canonical (just markdown)
+  toCanonical(content: string, _skillName: string): string {
+    return content; // No transformation needed
+  },
+
+  fromCanonical(content: string, _skillName: string): string {
+    return content; // No transformation needed
   }
 };

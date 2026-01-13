@@ -59,11 +59,13 @@ describe('MCP Config Management', () => {
       expect(result).toEqual({});
     });
 
-    it('should skip agents without CLI installed', async () => {
+    it('should return empty when no agent CLIs are installed', async () => {
+      // Without CLIs installed, all agents are skipped
       const result = await addMcpServersToConfig([
         { name: 'test-server', package: '@test/server', command: 'npx', args: ['test-server'] }
       ]);
-      expect(result).toEqual({});
+      // Result should be empty since no CLIs are available in test environment
+      expect(Object.keys(result).length).toBe(0);
     });
   });
 

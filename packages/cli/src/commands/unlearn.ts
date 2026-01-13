@@ -18,16 +18,23 @@ const getLocalSkillsDir = (projectRoot: string) => join(projectRoot, '.dojo', 's
 interface UnlearnOptions {
   yes?: boolean;
   global?: boolean;
+  forAgents?: string[];  // Subset of agents to unlearn from
+  mcpMode?: boolean;     // Remove MCP configs only (skip skill files)
 }
 
 /**
  * Find all locations where a skill is installed using the plugin system.
  * Checks each detected agent's skill path.
+ * @param forAgents - Optional array of agent names to filter by
  */
-export function findSkillLocations(projectRoot: string, skillName: string): string[] {
+export function findSkillLocations(projectRoot: string, skillName: string, forAgents?: string[]): string[] {
   const locations: string[] = [];
+  const allowedAgents = forAgents ? new Set(forAgents.map(a => a.toLowerCase().trim())) : null;
 
   for (const plugin of plugins) {
+    // If forAgents specified, filter to only those agents
+    if (allowedAgents && !allowedAgents.has(plugin.name)) continue;
+
     const detected = plugin.detect(projectRoot);
     if (!detected) continue;
 
@@ -159,34 +166,39 @@ export async function unlearn(
     // Global unlearn: remove from ~/.dojo/skills and all MCP configs
     console.log(chalk.red(`🗑️  Removing "${skill}" globally...\n`));
 
-    // Remove symlinks from project agent directories
-    const locations = findSkillLocations(projectRoot, skill);
-    console.log(chalk.yellow('📂 Removing symlinks:'));
-    if (locations.length > 0) {
-      const removedSymlinks = await removeSkillSymlinks(locations);
-      for (const loc of locations) {
-        const relative = loc.replace(projectRoot, '').replace(/^\//, '');
-        console.log(chalk.red(`   ✗ ${relative}`));
+    // MCP-only mode: skip skill file removal
+    if (!options.mcpMode) {
+      // Remove symlinks from project agent directories
+      const locations = findSkillLocations(projectRoot, skill, options.forAgents);
+      console.log(chalk.yellow('📂 Removing symlinks:'));
+      if (locations.length > 0) {
+        const removedSymlinks = await removeSkillSymlinks(locations);
+        for (const loc of locations) {
+          const relative = loc.replace(projectRoot, '').replace(/^\//, '');
+          console.log(chalk.red(`   ✗ ${relative}`));
+        }
+        if (removedSymlinks === 0 && locations.length > 0) {
+          console.log(chalk.gray(`   (already removed or not symlinks)`));
+        }
+      } else {
+        console.log(chalk.gray(`   No symlinks found for "${skill}"`));
       }
-      if (removedSymlinks === 0 && locations.length > 0) {
-        console.log(chalk.gray(`   (already removed or not symlinks)`));
-      }
-    } else {
-      console.log(chalk.gray(`   No symlinks found for "${skill}"`));
-    }
 
-    // Remove from global storage
-    console.log('');
-    console.log(chalk.yellow('📦 Removing from global storage:'));
-    const removed = removeGlobalSkillFile(skill);
-    if (removed) {
-      console.log(chalk.red(`   ✗ ${GLOBAL_SKILLS_DIR}/${skill}.md`));
-    } else {
-      console.log(chalk.gray(`   No global file found for "${skill}"`));
+      // Remove from global storage
+      console.log('');
+      console.log(chalk.yellow('📦 Removing from global storage:'));
+      const removed = removeGlobalSkillFile(skill);
+      if (removed) {
+        console.log(chalk.red(`   ✗ ${GLOBAL_SKILLS_DIR}/${skill}.md`));
+      } else {
+        console.log(chalk.gray(`   No global file found for "${skill}"`));
+      }
+
+      console.log('');
     }
 
     // Remove MCP server entries
-    console.log('');
+    if (!options.mcpMode) console.log('');
     console.log(chalk.yellow('🔌 Removing MCP servers:'));
     const removedMcp = await removeMcpServer(skill);
     if (removedMcp.length > 0) {
@@ -198,39 +210,58 @@ export async function unlearn(
       console.log(chalk.gray(`   No MCP server entry found for "${skill}"`));
     }
 
-    console.log(chalk.green(`\n✅ Unlearned ${skill} globally`));
+    const modeLabel = options.mcpMode ? ' (MCP only)' : '';
+    console.log(chalk.green(`\n✅ Unlearned ${skill} globally${modeLabel}`));
 
   } else {
     // Local unlearn: remove symlinks AND local .dojo/skills file
     console.log(chalk.yellow(`🗑️  Removing "${skill}" from this project...\n`));
 
-    // Remove symlinks from agent directories
-    const locations = findSkillLocations(projectRoot, skill);
-    console.log(chalk.yellow('📂 Removing symlinks:'));
-    if (locations.length > 0) {
-      const removedSymlinks = await removeSkillSymlinks(locations);
-      for (const loc of locations) {
-        const relative = loc.replace(projectRoot, '').replace(/^\//, '');
-        console.log(chalk.red(`   ✗ ${relative}`));
+    // MCP-only mode: skip skill file removal
+    if (!options.mcpMode) {
+      // Remove symlinks from agent directories
+      const locations = findSkillLocations(projectRoot, skill, options.forAgents);
+      console.log(chalk.yellow('📂 Removing symlinks:'));
+      if (locations.length > 0) {
+        const removedSymlinks = await removeSkillSymlinks(locations);
+        for (const loc of locations) {
+          const relative = loc.replace(projectRoot, '').replace(/^\//, '');
+          console.log(chalk.red(`   ✗ ${relative}`));
+        }
+        if (removedSymlinks === 0 && locations.length > 0) {
+          console.log(chalk.gray(`   (already removed or not symlinks)`));
+        }
+      } else {
+        console.log(chalk.gray(`   No symlinks found for "${skill}"`));
       }
-      if (removedSymlinks === 0 && locations.length > 0) {
-        console.log(chalk.gray(`   (already removed or not symlinks)`));
+
+      // Remove local skill file
+      const localSkillsDir = getLocalSkillsDir(projectRoot);
+      console.log('');
+      console.log(chalk.yellow('📦 Removing from local storage:'));
+      const removedLocal = removeLocalSkillFile(projectRoot, skill);
+      if (removedLocal) {
+        console.log(chalk.red(`   ✗ .dojo/skills/${skill}.md`));
+      } else {
+        console.log(chalk.gray(`   No local file found for "${skill}"`));
       }
-    } else {
-      console.log(chalk.gray(`   No symlinks found for "${skill}"`));
+
+      console.log('');
     }
 
-    // Remove local skill file
-    const localSkillsDir = getLocalSkillsDir(projectRoot);
-    console.log('');
-    console.log(chalk.yellow('📦 Removing from local storage:'));
-    const removedLocal = removeLocalSkillFile(projectRoot, skill);
-    if (removedLocal) {
-      console.log(chalk.red(`   ✗ .dojo/skills/${skill}.md`));
+    // Remove MCP server entries (always check, even in local mode)
+    console.log(chalk.yellow('🔌 Removing MCP servers:'));
+    const removedMcp = await removeMcpServer(skill);
+    if (removedMcp.length > 0) {
+      for (const { agent, path } of removedMcp) {
+        console.log(chalk.red(`   ✗ ${agent}: ${skill}`));
+        console.log(chalk.gray(`     → ${path}`));
+      }
     } else {
-      console.log(chalk.gray(`   No local file found for "${skill}"`));
+      console.log(chalk.gray(`   No MCP server entry found for "${skill}"`));
     }
 
-    console.log(chalk.green(`\n✅ Unlearned ${skill}`));
+    const modeLabel = options.mcpMode ? ' (MCP only)' : '';
+    console.log(chalk.green(`\n✅ Unlearned ${skill}${modeLabel}`));
   }
 }

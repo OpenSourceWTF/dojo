@@ -1,0 +1,212 @@
+---
+name: waaah-spec
+description: Interactive spec generation with quality gate
+---
+
+# WAAAH Spec Generator
+
+**Vague idea → 10/10 spec + tasks with dependencies.**
+
+## Core Rules
+1. `notify_user` + await at every ⏸️
+2. Log each iteration to `.waaah/specs/NNN-slug/spec.md`
+3. NEVER finalize below 10/10
+4. ALWAYS challenge vague answers
+5. Open Questions MUST be resolved before status = "Ready"
+6. Every spec MUST have Implementation + Verification tasks
+
+## State Machine
+```
+INIT → COLLECT ⏸️→ INTERVIEW ⏸️→ [LOOP | FINALIZE ⏸️→ TASKS ⏸️]
+          ↑             ↓
+          └─────────────┘
+```
+
+## Default Criteria
+
+| Criterion | Definition |
+|-----------|------------|
+| completeness | All features defined |
+| specificity | No ambiguous requirements |
+| testability | Every requirement verifiable |
+
+## Workflow
+
+### INIT
+Check `.waaah/specs` for incomplete sessions.
+If found: ⏸️ `notify_user "Resume [folder]?"` → await
+
+### COLLECT
+1. ⏸️ `notify_user "What are you building? Who? What problem?"` → await
+2. ⏸️ `notify_user "Criteria? (default: completeness, specificity, testability)"` → await
+3. Create `.waaah/specs/NNN-slug`
+4. ⏸️ `notify_user "Start interview?"` → await
+
+### INTERVIEW
+Analyze gaps, score 1-10, generate 2-5 targeted questions.
+
+| Question Type | Template |
+|---------------|----------|
+| Edge | "What happens if [X] fails?" |
+| Flow | "After [action], what next?" |
+| Conflict | "You said X but also Y - which wins?" |
+| Scope | "Is [feature] v1 or later?" |
+| API | "What's the request/response shape for [endpoint]?" |
+| **Integration** | "How will users/other code USE this? (UI button? CLI command? API call? Import?)" |
+| Reconcile | "Did implementation reveal anything the spec missed?" |
+
+**MANDATORY:** Every spec MUST answer the Integration question. If unclear, ask:
+- "Where in the UI does the user trigger this?"
+- "What CLI command exposes this?"
+- "Which existing service imports/calls this new code?"
+- "Show me the call path from user action → this code"
+
+⏸️ `notify_user` with score + gaps + questions → await
+
+### LOOP (if score < 10)
+Process response → update spec → INTERVIEW
+
+### FINALIZE (if score = 10)
+Generate spec.md using TEMPLATE. Save to `.waaah/specs/NNN-slug/spec.md`.
+⏸️ `notify_user` spec summary → await approval
+
+### CAPABILITY INFERENCE
+
+**Standard Capabilities:**
+- `spec-writing`: Planning, specifications, technical design
+- `code-writing`: Code development, implementation
+- `test-writing`: Testing, QA, verification
+- `doc-writing`: Documentation, technical writing
+- `code-doctor`: Read-only analysis, linting, quality checks (NO code changes)
+
+**Inference Rules:**
+1. **Implementation Tasks:**
+   - ALWAYS include `code-writing`
+   - Include `test-writing` if unit tests are involved
+   - **NEVER** include `code-doctor` (implies read-only)
+
+2. **Verification Tasks:**
+   - ALWAYS include `test-writing`
+   - Include `code-writing` if creating new E2E test files
+   - **NEVER** include `code-doctor`
+
+3. **Documentation Tasks:**
+   - ALWAYS include `doc-writing`
+
+4. **Analysis/Audit Tasks:**
+   - ONLY then include `code-doctor`
+
+### TASKS
+Generate two types of tasks:
+
+**Implementation Tasks (T-prefix):** Build the feature.
+**Verification Tasks (V-prefix):** E2E tests proving feature works.
+
+| Task Type | Verify Command |
+|-----------|----------------|
+| CLI | `node dist/index.js --help \| grep "expected"` |
+| API | `curl localhost:3000/health \| jq .status` |
+| Component | `pnpm test -- ComponentName` |
+| E2E | `pnpm test -- feature.e2e --grep "scenario"` |
+
+**Format:**
+```
+## Implementation Tasks
+| ID | Title | Size | Deps | Verify |
+|----|-------|------|------|--------|
+| T1 | [title] | S/M/L | — | [cmd] |
+
+## Verification Tasks (E2E)
+| ID | Title | Size | Deps | Verify |
+|----|-------|------|------|--------|
+| V1 | E2E: [scenario] | S/M | T1,T2 | [e2e cmd] |
+```
+
+**Rules:**
+- Every major feature needs at least 1 V-task
+- V-tasks depend on their related T-tasks
+- V-tasks test integration, not unit behavior
+- Verify commands MUST be runnable (full path, `--grep` patterns)
+
+⏸️ `notify_user` with both tables → "Confirm to assign?"
+
+On confirm:
+
+**Workspace Inference:** Before assigning tasks, infer the workspace from your current directory:
+- Use `git remote get-url origin` to extract the repo ID (e.g., `OpenSourceWTF/WAAAH`)
+- This ensures tasks route to agents working in the same repository
+
+```
+# Infer workspace from current directory (repoId format: "Owner/Repo")
+workspaceId = inferWorkspaceFromGitRemote()
+
+# Infer capabilities based on task type (Implementation vs Verify)
+t1_caps = inferCapabilities(t1)
+v1_caps = inferCapabilities(v1)
+
+t1_id = assign_task({ prompt, capabilities: t1_caps, verify, workspaceId })
+v1_id = assign_task({ prompt, dependencies: [t1_id], capabilities: v1_caps, verify, workspaceId })
+```
+
+Report: `✅ Spec saved. [N] implementation + [M] verification tasks queued in workspace [workspaceId].`
+
+## SPEC TEMPLATE
+
+```markdown
+# [Name] Specification
+**Version:** 1.0 | **Status:** Draft/Ready/Implemented/Validated
+**Depends On:** [Spec-XXX] (if any)
+**Related Workflows:** `waaah-xxx` (if any)
+
+## 1. Overview
+Problem: [X] | Users: [Y] | Solution: [Z]
+
+## 2. Integration Path
+**How users access this feature:**
+- UI: [Button/page/action] → [Component] → [Service] → [This code]
+- CLI: `waaah [command]` → [Handler] → [This code]
+- API: `[METHOD] /[endpoint]` → [Handler] → [This code]
+- Import: `import { X } from '[package]'` used by [Consumer]
+
+## 3. User Stories
+- [ ] US-1: As [user], I want [action], so that [benefit]
+
+## 4. Requirements
+| ID | Requirement |
+|----|-------------|
+| FR-1 | [functional] |
+| NFR-1 | [non-functional] |
+
+## 5. Edge Cases
+| Scenario | Behavior |
+|----------|----------|
+| [case] | [response] |
+
+## 6. Out of Scope
+- [excluded]
+
+## 7. Success Metrics
+| Metric | Target |
+|--------|--------|
+| [metric] | [value] |
+
+## 7. Implementation Tasks
+| ID | Title | Size | Deps | Verify |
+|----|-------|------|------|--------|
+| T1 | **[Component]: [Description]** | S/M/L | — | `[runnable command]` |
+
+## 8. Verification Tasks (E2E)
+| ID | Title | Size | Deps | Verify |
+|----|-------|------|------|--------|
+| V1 | **E2E: [Scenario]** | M | T1,T2 | `pnpm test -- [file].e2e.ts` |
+
+## 9. API Contracts (if applicable)
+| Endpoint | Method | Request | Response | Errors |
+|----------|--------|---------|----------|--------|
+
+## 10. Open Questions
+| Question | Status | Resolution |
+|----------|--------|------------|
+| [question] | OPEN/RESOLVED | [answer if resolved] |
+```
+

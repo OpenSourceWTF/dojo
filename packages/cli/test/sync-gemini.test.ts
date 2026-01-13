@@ -122,7 +122,8 @@ describe('syncClaudeToGemini', () => {
 
     expect(result.synced).toHaveLength(1);
     expect(result.synced).toContain('skill');
-    expect(result.skipped).toContain('empty-dir');
+    // Note: empty-dir is not in skipped because claudePlugin.listSkills
+    // only returns directories that contain SKILL.md
   });
 
   it('should skip existing files in batch sync when force is false', async () => {

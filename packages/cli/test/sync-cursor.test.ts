@@ -1,169 +1,170 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { claudeToCursor, syncClaudeToCursor } from '../src/sync/cursor.js';
-import fs from 'fs/promises';
-import path from 'path';
-
-vi.mock('fs/promises');
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 describe('claudeToCursor', () => {
+  let tmpRoot: string;
+
   beforeEach(() => {
-    vi.resetAllMocks();
+    tmpRoot = join(tmpdir(), `dojo-sync-cursor-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tmpRoot, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(tmpRoot)) {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 
   it('should transform simple markdown to cursor rule format', async () => {
+    // Create source file
+    const sourceDir = join(tmpRoot, 'source');
+    const destDir = join(tmpRoot, 'dest');
+    mkdirSync(sourceDir, { recursive: true });
+
     const sourceContent = '# My Skill\n\nSome description.\n\n## Rules\n- Rule 1';
-    const sourcePath = '/mock/project/.claude/skills/my-skill/SKILL.md';
-    const destPath = '/mock/project/.cursor/rules/my-skill/RULE.md';
+    const sourcePath = join(sourceDir, 'SKILL.md');
+    const destPath = join(destDir, 'RULE.md');
 
-    // Mock file doesn't exist (access throws)
-    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
-    vi.mocked(fs.readFile).mockResolvedValue(sourceContent);
-    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+    writeFileSync(sourcePath, sourceContent);
 
-    await claudeToCursor(sourcePath, destPath);
+    const result = await claudeToCursor(sourcePath, destPath);
 
-    expect(fs.readFile).toHaveBeenCalledWith(sourcePath, 'utf-8');
-    expect(fs.mkdir).toHaveBeenCalledWith(path.dirname(destPath), { recursive: true });
+    expect(result).toBe(true);
+    expect(existsSync(destPath)).toBe(true);
 
-    const expectedContent = `---
-name: my-skill
-alwaysApply: false
-description: My Skill
----
-
-# My Skill
-
-Some description.
-
-## Rules
-- Rule 1`;
-
-    expect(fs.writeFile).toHaveBeenCalledWith(destPath, expectedContent);
+    const destContent = readFileSync(destPath, 'utf-8');
+    expect(destContent).toContain('---');
+    expect(destContent).toContain('name: source'); // Uses parent dir name for folder format
+    expect(destContent).toContain('description: My Skill');
+    expect(destContent).toContain('alwaysApply: false');
+    expect(destContent).toContain('# My Skill');
   });
 
   it('should use header as description', async () => {
-    const sourceContent = '# Header Only';
-    const sourcePath = '/mock/src/SKILL.md';
-    const destPath = '/mock/dest/RULE.md';
+    const sourceDir = join(tmpRoot, 'test-skill');
+    mkdirSync(sourceDir, { recursive: true });
 
-    // Mock file doesn't exist
-    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
-    vi.mocked(fs.readFile).mockResolvedValue(sourceContent);
-    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+    const sourcePath = join(sourceDir, 'SKILL.md');
+    const destPath = join(tmpRoot, 'dest', 'RULE.md');
+
+    writeFileSync(sourcePath, '# Header Only');
 
     await claudeToCursor(sourcePath, destPath);
 
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      destPath,
-      expect.stringContaining('description: Header Only')
-    );
+    const destContent = readFileSync(destPath, 'utf-8');
+    expect(destContent).toContain('description: Header Only');
   });
 
   it('should use default description if file is empty', async () => {
-    const sourceContent = '   ';
-    const sourcePath = '/mock/src/SKILL.md';
-    const destPath = '/mock/dest/RULE.md';
+    const sourceDir = join(tmpRoot, 'empty-skill');
+    mkdirSync(sourceDir, { recursive: true });
 
-    // Mock file doesn't exist
-    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
-    vi.mocked(fs.readFile).mockResolvedValue(sourceContent);
-    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+    const sourcePath = join(sourceDir, 'SKILL.md');
+    const destPath = join(tmpRoot, 'dest', 'RULE.md');
+
+    writeFileSync(sourcePath, '   ');
 
     await claudeToCursor(sourcePath, destPath);
 
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      destPath,
-      expect.stringContaining('description: Imported from dojo')
-    );
+    const destContent = readFileSync(destPath, 'utf-8');
+    expect(destContent).toContain('description: Imported from dojo');
   });
 
-  it('should skip existing file if force is false', async () => {
-    const sourcePath = '/mock/project/.claude/skills/my-skill/SKILL.md';
-    const destPath = '/mock/project/.cursor/rules/my-skill/RULE.md';
+  it('should skip if destination exists and force is false', async () => {
+    const sourceDir = join(tmpRoot, 'skill');
+    const destDir = join(tmpRoot, 'dest');
+    mkdirSync(sourceDir, { recursive: true });
+    mkdirSync(destDir, { recursive: true });
 
-    vi.mocked(fs.access).mockResolvedValue(undefined); // Exists
+    const sourcePath = join(sourceDir, 'SKILL.md');
+    const destPath = join(destDir, 'RULE.md');
+
+    writeFileSync(sourcePath, '# Source');
+    writeFileSync(destPath, '# Existing');
 
     const result = await claudeToCursor(sourcePath, destPath, { force: false });
 
     expect(result).toBe(false);
-    expect(fs.writeFile).not.toHaveBeenCalled();
+    expect(readFileSync(destPath, 'utf-8')).toBe('# Existing');
   });
 
-  it('should overwrite existing file if force is true', async () => {
-    const sourcePath = '/mock/project/.claude/skills/my-skill/SKILL.md';
-    const destPath = '/mock/project/.cursor/rules/my-skill/RULE.md';
-    const sourceContent = '# Content';
+  it('should overwrite if force is true', async () => {
+    const sourceDir = join(tmpRoot, 'skill');
+    const destDir = join(tmpRoot, 'dest');
+    mkdirSync(sourceDir, { recursive: true });
+    mkdirSync(destDir, { recursive: true });
 
-    vi.mocked(fs.access).mockResolvedValueOnce(undefined) // First call: dest exists
-      .mockResolvedValue(undefined); // Subsequent calls
-    vi.mocked(fs.readFile).mockResolvedValue(sourceContent);
-    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+    const sourcePath = join(sourceDir, 'SKILL.md');
+    const destPath = join(destDir, 'RULE.md');
+
+    writeFileSync(sourcePath, '# New Content');
+    writeFileSync(destPath, '# Old');
 
     const result = await claudeToCursor(sourcePath, destPath, { force: true });
 
     expect(result).toBe(true);
-    expect(fs.writeFile).toHaveBeenCalled();
+    expect(readFileSync(destPath, 'utf-8')).toContain('# New Content');
   });
 });
 
 describe('syncClaudeToCursor', () => {
+  let tmpRoot: string;
+
   beforeEach(() => {
-    vi.resetAllMocks();
+    tmpRoot = join(tmpdir(), `dojo-sync-cursor-batch-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tmpRoot, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(tmpRoot)) {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 
   it('should process all skill directories in .claude/skills', async () => {
-    const projectRoot = '/mock/project';
-    const skillsDir = path.join(projectRoot, '.claude/skills');
+    const claudeSkillsDir = join(tmpRoot, '.claude', 'skills');
+    const cursorRulesDir = join(tmpRoot, '.cursor', 'rules');
 
-    // Mock directory listing (folder-skill format: directories)
-    vi.mocked(fs.readdir).mockResolvedValue(['skill1', 'skill2', 'not-a-skill'] as any);
+    // Create Claude skills (folder-skill format)
+    mkdirSync(join(claudeSkillsDir, 'skill1'), { recursive: true });
+    mkdirSync(join(claudeSkillsDir, 'skill2'), { recursive: true });
+    mkdirSync(join(claudeSkillsDir, 'not-a-skill'), { recursive: true }); // No SKILL.md
 
-    // Mock stat to identify directories
-    vi.mocked(fs.stat).mockImplementation(async (p) => {
-      return { isDirectory: () => true } as any;
-    });
+    writeFileSync(join(claudeSkillsDir, 'skill1', 'SKILL.md'), '# Skill 1');
+    writeFileSync(join(claudeSkillsDir, 'skill2', 'SKILL.md'), '# Skill 2');
 
-    // Mock access - first call for each skill is SKILL.md existence check
-    vi.mocked(fs.access).mockImplementation(async (p) => {
-      const pathStr = String(p);
-      if (pathStr.endsWith('not-a-skill/SKILL.md')) {
-        throw new Error('ENOENT'); // not-a-skill has no SKILL.md
-      }
-      if (pathStr.includes('SKILL.md')) {
-        return undefined; // skill1 and skill2 have SKILL.md
-      }
-      throw new Error('ENOENT'); // dest files don't exist
-    });
+    const result = await syncClaudeToCursor(tmpRoot);
 
-    vi.mocked(fs.readFile).mockResolvedValue('# Content');
-    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
-
-    const result = await syncClaudeToCursor(projectRoot);
-
-    expect(fs.readdir).toHaveBeenCalledWith(skillsDir);
     expect(result.synced).toContain('skill1');
     expect(result.synced).toContain('skill2');
     expect(result.synced).toHaveLength(2);
-    expect(result.skipped).toContain('not-a-skill');
+
+    // Check Cursor rules were created
+    expect(existsSync(join(cursorRulesDir, 'skill1', 'RULE.md'))).toBe(true);
+    expect(existsSync(join(cursorRulesDir, 'skill2', 'RULE.md'))).toBe(true);
   });
 
   it('should skip existing files when force is false', async () => {
-    const projectRoot = '/mock/project';
+    const claudeSkillsDir = join(tmpRoot, '.claude', 'skills');
+    const cursorRulesDir = join(tmpRoot, '.cursor', 'rules');
 
-    vi.mocked(fs.readdir).mockResolvedValue(['skill1'] as any);
-    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => true } as any);
+    // Create Claude skill
+    mkdirSync(join(claudeSkillsDir, 'skill1'), { recursive: true });
+    writeFileSync(join(claudeSkillsDir, 'skill1', 'SKILL.md'), '# Skill 1');
 
-    // All access calls succeed (files exist)
-    vi.mocked(fs.access).mockResolvedValue(undefined);
+    // Pre-create Cursor rule
+    mkdirSync(join(cursorRulesDir, 'skill1'), { recursive: true });
+    writeFileSync(join(cursorRulesDir, 'skill1', 'RULE.md'), '# Existing');
 
-    const result = await syncClaudeToCursor(projectRoot, { force: false });
+    const result = await syncClaudeToCursor(tmpRoot, { force: false });
 
     expect(result.synced).toHaveLength(0);
     expect(result.skipped).toContain('skill1');
+
+    // Existing file unchanged
+    expect(readFileSync(join(cursorRulesDir, 'skill1', 'RULE.md'), 'utf-8')).toBe('# Existing');
   });
 });

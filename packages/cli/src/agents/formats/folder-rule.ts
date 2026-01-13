@@ -4,7 +4,7 @@
  * See LICENSE file for details.
  */
 
-import { existsSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, rmSync, readdirSync, statSync, lstatSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { SkillFormatPlugin, FormatInstallOptions, FormatRemoveOptions } from '../format-plugin.js';
@@ -30,7 +30,11 @@ export const folderRulePlugin: SkillFormatPlugin = {
     });
   },
 
-  transformContent(content: string, skillName: string): string {
+  /**
+   * Convert FROM canonical (folder-skill) format TO folder-rule format.
+   * Adds YAML frontmatter required by Cursor.
+   */
+  fromCanonical(content: string, skillName: string): string {
     // Extract description from first line
     const lines = content.split('\n');
     let description = 'Imported from dojo';
@@ -47,6 +51,26 @@ description: ${description}
 ${content}`;
   },
 
+  /**
+   * Convert FROM folder-rule format TO canonical (folder-skill) format.
+   * Strips YAML frontmatter.
+   */
+  toCanonical(content: string, _skillName: string): string {
+    // Check if content starts with YAML frontmatter
+    if (!content.startsWith('---')) {
+      return content; // No frontmatter, return as-is
+    }
+
+    // Find end of frontmatter
+    const endIndex = content.indexOf('---', 3);
+    if (endIndex === -1) {
+      return content; // Malformed frontmatter, return as-is
+    }
+
+    // Return content after frontmatter (skip the closing --- and following newlines)
+    return content.slice(endIndex + 3).replace(/^\n+/, '');
+  },
+
   async installSkill(options: FormatInstallOptions): Promise<string> {
     const { baseDir, skillName, sourcePath } = options;
     const destPath = this.getSkillPath(baseDir, skillName);
@@ -54,13 +78,17 @@ ${content}`;
 
     await mkdir(skillDir, { recursive: true });
 
-    if (existsSync(destPath)) {
-      rmSync(destPath);
+    // Remove existing file/symlink if it exists (lstatSync catches broken symlinks too)
+    try {
+      lstatSync(destPath);
+      rmSync(destPath, { force: true });
+    } catch {
+      // File doesn't exist, which is fine
     }
 
     // Read source and transform with YAML frontmatter
     const content = await readFile(sourcePath, 'utf-8');
-    const transformed = this.transformContent!(content, skillName);
+    const transformed = this.fromCanonical(content, skillName);
     await writeFile(destPath, transformed);
 
     return skillName;

@@ -8,7 +8,7 @@ import chalk from 'chalk';
 import { searchRegistry, loadRegistry, SkillEntry } from '../registry/index.js';
 import { resolveSkill, detectCycle } from '../resolver/dependencies.js';
 import { downloadSkill } from '../download/github.js';
-import { detectAgents, getPluginForAgent } from '../agents/detector.js';
+import { detectAgents, getPluginByName } from '../agents/detector.js';
 import type { DetectedAgent } from '../agents/plugin.js';
 import { addMcpServersToConfig } from '../mcp/config.js';
 import { prompt } from '../utils/prompt.js';
@@ -18,8 +18,7 @@ import { homedir } from 'node:os';
 
 interface LearnOptions {
   registry?: string;  // Local path, github:owner/repo, or URL
-  skillOnly?: boolean; // Install skill/workflow files only
-  mcpOnly?: boolean;   // Install MCP servers only
+  mcpMode?: boolean;  // Modal: install MCP servers only (skip skills)
   forAgents?: string[]; // Specific agents to install for
   global?: boolean;    // Install to global ~/.dojo/skills instead of project-local
 }
@@ -159,17 +158,40 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     process.exit(1);
   }
 
-  // 2. Handle multiple matches
+  // 2. Filter and select skill
+  let candidates = results;
+
+  // When --mcp is set, filter to skills with mcp_servers
+  if (options.mcpMode) {
+    candidates = results.filter(r => r.skill.mcp_servers && r.skill.mcp_servers.length > 0);
+
+    // If no MCP skills found in results, search for mcp-<name> variant
+    if (candidates.length === 0) {
+      const mcpVariants = await searchRegistry(`mcp-${skillQuery}`, {
+        localRegistryPath: registryConfig.localRegistryPath,
+        localOnly: registryConfig.localOnly
+      });
+      candidates = mcpVariants.filter(r => r.skill.mcp_servers && r.skill.mcp_servers.length > 0);
+
+      if (candidates.length === 0) {
+        console.log(chalk.yellow(`⚠️  No MCP servers found for "${skillQuery}"`));
+        console.log(chalk.gray(`   Try: dojo search ${skillQuery} --mcp`));
+        process.exit(1);
+      }
+    }
+  }
+
+  // Unified selection logic
   let fqn: string;
-  if (results.length === 1) {
-    fqn = results[0].fqn;
+  if (candidates.length === 1) {
+    fqn = candidates[0].fqn;
   } else {
     // Check for exact match first
-    const exact = results.find(r => r.fqn === skillQuery || r.skill.name === skillQuery);
+    const exact = candidates.find(r => r.fqn === skillQuery || r.skill.name === skillQuery);
     if (exact) {
       fqn = exact.fqn;
     } else {
-      fqn = await promptUserSelection(results);
+      fqn = await promptUserSelection(candidates);
     }
   }
 
@@ -200,33 +222,40 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     console.log(chalk.gray(prefix) + r.fqn);
   });
 
-  // 7. Detect agents
-  let agents = detectAgents(projectRoot);
+  // 7. Detect agents (with CLI requirement for skill installation)
+  let agents = detectAgents(projectRoot, { requireCli: true });
 
   if (options.forAgents && options.forAgents.length > 0) {
-    const allowed = new Set(options.forAgents.map(a => a.toLowerCase().trim()));
-    agents = agents.filter(a => allowed.has(a.name));
+    const requested = new Set(options.forAgents.map(a => a.toLowerCase().trim()));
+    const filtered = agents.filter(a => requested.has(a.name));
 
-    // If user asked for an agent that isn't detected, we should probably warn or auto-create?
-    // For now, let's just stick to what's detected + filtered, but maybe ensure
-    // we don't end up with empty list if they asked for 'claude' and we have it.
-    if (agents.length === 0) {
-      console.log(chalk.yellow(`\n⚠️  No detected agents matched the filter "${options.forAgents.join(', ')}"`));
-      // Check if they asked for Claude explicitly, maybe force create?
-      if (allowed.has('claude')) {
-        console.log(chalk.yellow('   Forcing Claude creation as requested...'));
-        const claudePath = join(projectRoot, '.claude', 'skills');
-        await mkdir(claudePath, { recursive: true });
-        agents.push({ name: 'claude', path: claudePath, format: 'flat-md' });
+    // Warn about requested agents that weren't detected
+    for (const agentName of requested) {
+      const plugin = getPluginByName(agentName);
+      if (!plugin) {
+        console.log(chalk.red(`⚠️  Unknown agent: ${agentName}`));
+      } else {
+        const isDetected = agents.some(a => a.name === agentName);
+        if (!isDetected) {
+          console.log(chalk.yellow(`⚠️  ${plugin.displayName} not detected (CLI not installed or directory missing)`));
+        }
       }
+    }
+
+    agents = filtered;
+
+    if (agents.length === 0) {
+      console.log(chalk.yellow(`\n❌ No agents available to install to.`));
+      console.log(chalk.gray(`   Install agent CLIs (claude, gemini, cursor, codex) or create directories first.`));
+      return;
     }
   }
 
-  if (agents.length === 0 && (!options.forAgents || options.forAgents.length === 0)) {
-    console.log(chalk.yellow('\n⚠️  No agent directories detected. Creating .claude/skills...'));
-    const claudePath = join(projectRoot, '.claude', 'skills');
-    await mkdir(claudePath, { recursive: true });
-    agents.push({ name: 'claude', path: claudePath, format: 'flat-md' });
+  // If no agents detected, show warning and exit
+  if (agents.length === 0) {
+    console.log(chalk.yellow('\n❌ No agents detected.'));
+    console.log(chalk.gray(`   Install agent CLIs (claude, gemini, cursor, codex) or create directories first.`));
+    return;
   }
 
   // 8. Determine skills directory based on global flag
@@ -253,8 +282,8 @@ export async function learn(skill: string, options: LearnOptions = {}) {
       !entry.source.endsWith('.md') &&
       !entry.path?.endsWith('.md');
 
-    // Download skill files (unless --mcp flag is set or this is MCP-only)
-    if (!options.mcpOnly && !isMcpOnly) {
+    // Download skill files (unless --mcp flag is set or this is MCP-only entry)
+    if (!options.mcpMode && !isMcpOnly) {
       const canonicalPath = join(skillsDir, `${skillName}.md`);
 
       try {
@@ -282,7 +311,7 @@ export async function learn(skill: string, options: LearnOptions = {}) {
 
       // Install to all detected agent directories using plugins
       for (const agent of agents) {
-        const plugin = getPluginForAgent(agent);
+        const plugin = getPluginByName(agent.name);
         if (plugin) {
           const destPath = await plugin.installSkill({
             projectRoot,
@@ -294,8 +323,8 @@ export async function learn(skill: string, options: LearnOptions = {}) {
       }
     }
 
-    // Collect MCP servers for setup (unless --skill/--workflow flag is set)
-    if (!options.skillOnly && entry.mcp_servers && entry.mcp_servers.length > 0) {
+    // Collect MCP servers for setup only if --mcp flag is set (modal)
+    if (options.mcpMode && entry.mcp_servers && entry.mcp_servers.length > 0) {
       allMcpServers.push(...entry.mcp_servers);
     }
   }

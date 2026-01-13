@@ -31,6 +31,9 @@ export interface FormatRemoveOptions {
 /**
  * Skill format plugin interface.
  * Handles format-specific file operations for skills.
+ * 
+ * Uses a hub-and-spoke model where 'folder-skill' (Claude format) is the
+ * canonical format. All conversions go through this canonical format.
  */
 export interface SkillFormatPlugin {
   /** Format identifier */
@@ -61,7 +64,24 @@ export interface SkillFormatPlugin {
   removeSkill(options: FormatRemoveOptions): Promise<boolean>;
 
   /**
-   * Transform content before writing (optional, e.g., for Cursor frontmatter).
+   * Convert content FROM this format TO canonical (folder-skill) format.
+   * For folder-skill format, this is a no-op (returns content unchanged).
+   * For other formats, this strips format-specific elements (e.g., YAML frontmatter).
+   * 
+   * @param content - Content in this format
+   * @param skillName - Name of the skill (for metadata extraction)
+   * @returns Content in canonical folder-skill format
    */
-  transformContent?(content: string, skillName: string): string;
+  toCanonical(content: string, skillName: string): string;
+
+  /**
+   * Convert content FROM canonical (folder-skill) format TO this format.
+   * For folder-skill format, this is a no-op (returns content unchanged).
+   * For other formats, this adds format-specific elements (e.g., YAML frontmatter).
+   * 
+   * @param content - Content in canonical folder-skill format
+   * @param skillName - Name of the skill (for metadata injection)
+   * @returns Content in this format
+   */
+  fromCanonical(content: string, skillName: string): string;
 }

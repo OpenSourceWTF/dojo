@@ -5,6 +5,11 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+// Mock child_process execSync to make all CLI checks pass
+vi.mock('node:child_process', () => ({
+  execSync: vi.fn().mockImplementation(() => '/usr/bin/claude'),
+}));
+
 describe('learn command', () => {
   const tmpRoot = join(tmpdir(), 'dojo-learn-test-' + Date.now());
   let mockExit: ReturnType<typeof vi.spyOn>;
@@ -188,7 +193,7 @@ describe('learn command', () => {
     );
   });
 
-  it('should create .claude/skills when no agents detected', async () => {
+  it('should exit gracefully when no agents detected', async () => {
     // Remove the claude directory that was created in beforeEach
     await rm(join(tmpRoot, '.claude'), { recursive: true, force: true });
 
@@ -197,11 +202,13 @@ describe('learn command', () => {
       text: () => Promise.resolve('# Test Skill')
     });
 
-    await learn('@anthropics/create-docx', { registry: join(tmpRoot, 'registry') });
+    // Should return early without error (no auto-create behavior)
+    await expect(
+      learn('@anthropics/create-docx', { registry: join(tmpRoot, 'registry') })
+    ).resolves.not.toThrow();
 
-    // Should have auto-created claude directory
-    expect(existsSync(join(tmpRoot, '.claude', 'skills'))).toBe(true);
-    expect(existsSync(join(tmpRoot, '.claude', 'skills', 'create-docx', 'SKILL.md'))).toBe(true);
+    // Directory should NOT be auto-created
+    expect(existsSync(join(tmpRoot, '.claude', 'skills'))).toBe(false);
   });
 
   it('should handle global install flag', async () => {
@@ -308,7 +315,7 @@ This is the skill body.`)
     expect(existsSync(join(tmpRoot, '.gemini', 'skills', 'create-docx', 'SKILL.md'))).toBe(false);
   });
 
-  it('should force create claude when forAgents includes claude but not detected', async () => {
+  it('should warn and skip when forAgents includes undetected agent', async () => {
     // Remove all agent directories
     await rm(join(tmpRoot, '.claude'), { recursive: true, force: true });
 
@@ -317,13 +324,16 @@ This is the skill body.`)
       text: () => Promise.resolve('# Test Skill')
     });
 
-    await learn('@anthropics/create-docx', {
-      registry: join(tmpRoot, 'registry'),
-      forAgents: ['claude']
-    });
+    // Should exit gracefully (no auto-create behavior)
+    await expect(
+      learn('@anthropics/create-docx', {
+        registry: join(tmpRoot, 'registry'),
+        forAgents: ['claude']
+      })
+    ).resolves.not.toThrow();
 
-    // Should have force-created claude directory
-    expect(existsSync(join(tmpRoot, '.claude', 'skills', 'create-docx', 'SKILL.md'))).toBe(true);
+    // Directory should NOT be auto-created
+    expect(existsSync(join(tmpRoot, '.claude', 'skills', 'create-docx', 'SKILL.md'))).toBe(false);
   });
 
   it('should install skill to multiple agents', async () => {

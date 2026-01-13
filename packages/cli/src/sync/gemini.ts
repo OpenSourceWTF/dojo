@@ -4,15 +4,17 @@
  * See LICENSE file for details.
  */
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { claudePlugin } from '../agents/plugins/claude.js';
+import { antigravityPlugin } from '../agents/plugins/antigravity.js';
 
 export interface SyncOptions {
   force?: boolean;
 }
 
 /**
- * Transform Claude skill to Gemini format (1:1 copy).
+ * Transform Claude skill to Gemini/Antigravity format (1:1 copy).
  * Claude and Gemini use identical markdown format.
  * Returns true if file was written, false if skipped.
  */
@@ -37,9 +39,10 @@ export function claudeToGemini(sourcePath: string, destPath: string, options: Sy
 }
 
 /**
- * Batch sync all Claude skills to Gemini format.
- * - Source: .claude/skills/{skill}/SKILL.md (folder-skill format)
- * - Dest: .agent/workflows/{skill}.md (flat-md format)
+ * Batch sync all Claude skills to Antigravity format.
+ * Uses plugin system for source and destination paths.
+ * - Source: Claude folder-skill format ({skill}/SKILL.md)
+ * - Dest: Antigravity flat-md format ({skill}.md)
  */
 export function syncClaudeToGemini(
   projectRoot: string,
@@ -48,41 +51,19 @@ export function syncClaudeToGemini(
   const synced: string[] = [];
   const skipped: string[] = [];
 
-  const claudeDir = join(projectRoot, '.claude', 'skills');
-  const geminiDir = join(projectRoot, '.agent', 'workflows');
+  // Use plugin system to list Claude skills
+  const skillNames = claudePlugin.listSkills(projectRoot);
 
-  // Check if Claude skills directory exists
-  if (!existsSync(claudeDir)) {
-    return { synced, skipped };
-  }
+  for (const skillName of skillNames) {
+    const sourcePath = claudePlugin.getSkillPath(projectRoot, skillName);
+    const destPath = antigravityPlugin.getSkillPath(projectRoot, skillName);
 
-  // Get all skill directories in Claude skills directory
-  const entries = readdirSync(claudeDir);
-
-  for (const entry of entries) {
-    const entryPath = join(claudeDir, entry);
-
-    // Skip if not a directory
-    if (!statSync(entryPath).isDirectory()) {
-      skipped.push(entry);
-      continue;
-    }
-
-    // Check for SKILL.md inside the directory
-    const skillFilePath = join(entryPath, 'SKILL.md');
-    if (!existsSync(skillFilePath)) {
-      skipped.push(entry);
-      continue;
-    }
-
-    // Sync the skill (output as flat .md file)
-    const destPath = join(geminiDir, `${entry}.md`);
-    const wasSynced = claudeToGemini(skillFilePath, destPath, options);
+    const wasSynced = claudeToGemini(sourcePath, destPath, options);
 
     if (wasSynced) {
-      synced.push(entry);
+      synced.push(skillName);
     } else {
-      skipped.push(entry);
+      skipped.push(skillName);
     }
   }
 

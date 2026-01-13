@@ -4,15 +4,18 @@
  * See LICENSE file for details.
  */
 
-import { createAgentPlugin, AgentPlugin } from '../plugin.js';
+import { createAgentPlugin } from '../plugin.js';
 
 /**
- * Cursor agent plugin using folder-rule format with YAML frontmatter.
+ * Cursor agent plugin.
  * Skills are stored in .cursor/rules/{skill}/RULE.md
+ * Note: Cursor does not support MCP servers currently.
  */
-export const cursorPlugin: AgentPlugin = createAgentPlugin({
+export const cursorPlugin = createAgentPlugin({
   name: 'cursor',
   displayName: 'Cursor',
   format: 'folder-rule',
-  agentDir: '.cursor/rules'
+  agentDir: '.cursor/rules',
+  cli: 'cursor'
+  // No mcpConfig - Cursor doesn't support MCP
 });

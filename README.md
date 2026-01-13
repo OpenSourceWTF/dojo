@@ -33,7 +33,7 @@ dojo search testing
 dojo learn test-generation
 
 # Install an MCP server
-dojo learn mcp-github
+dojo learn --mcp playwright
 ```
 
 ---
@@ -54,7 +54,7 @@ dojo learn mcp-github
 
 | Agent | Skill Directory | MCP Config |
 |-------|-----------------|------------|
-| **Claude** | `.claude/skills/` | `~/.claude/claude_desktop_config.json` |
+| **Claude** | `.claude/skills/` | `~/.claude.json` |
 | **Gemini** | `.gemini/skills/` | `~/.gemini/settings.json` |
 | **Antigravity** | `.agent/workflows/` | `~/.gemini/antigravity/mcp_config.json` |
 | **Cursor** | `.cursor/rules/` | — |
@@ -66,38 +66,37 @@ dojo learn mcp-github
 
 ## 📖 CLI Reference
 
-### `dojo learn <skill>`
+### `dojo learn <skill>` (alias: `add`)
 
 Install a skill or MCP server to all detected agents.
 
 ```bash
 dojo learn test-generation              # Install a skill
-dojo learn mcp-github                   # Install MCP server (prompts for env vars)
-dojo learn mcp-dojo --for claude        # Install only to Claude
-dojo learn playwright --skill           # Install skill file only, skip MCP
-dojo learn mcp-brave-search --mcp       # Install MCP config only, skip skill
+dojo learn --mcp playwright             # Install MCP server (auto-finds mcp-playwright)
+dojo learn mcp-github --for claude      # Install only to Claude
+dojo learn skill-name -g                # Install globally to ~/.dojo/skills
 ```
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--registry <url>` | Custom registry URL (local path or `github:owner/repo`) |
-| `--skill` | Install skill/workflow file only (skip MCP server setup) |
-| `--workflow` | Alias for `--skill` |
-| `--mcp` | Install MCP servers only (skip skill file) |
-| `--for <agents>` | Comma-separated list: `claude`, `gemini`, `cursor`, `codex`, `antigravity` |
+| `-g, --global` | Install to global `~/.dojo/skills` (shared across projects) |
+| `--mcp` | Install MCP servers only (skip skill files) |
+| `--for <agents>` | Target specific agents (comma-separated: `claude,gemini,cursor,codex`) |
+| `--registry <url>` | Custom registry (local path or `github:owner/repo`) |
+
+> **Modal Behavior:** With `--mcp`, Dojo filters search results to only show skills with MCP servers and automatically finds `mcp-<name>` variants.
 
 ---
 
 ### `dojo search <query>`
 
-Search the skill registry with fuzzy matching.
+Search the skill registry. By default shows only skill files (excludes MCP-only entries).
 
 ```bash
-dojo search mcp                 # Find MCP servers
 dojo search testing             # Find testing skills
-dojo search react               # Find React-related skills
+dojo search playwright --mcp    # Find MCP servers only
 dojo search @anthropics         # Find skills by organization
 ```
 
@@ -105,42 +104,49 @@ dojo search @anthropics         # Find skills by organization
 
 | Option | Description |
 |--------|-------------|
+| `--mcp` | Show only MCP servers (modal filter) |
 | `--registry <url>` | Custom registry URL |
-
-**Output example:**
-```
-Found 3 skills matching "testing":
-
-  [anthropics] test-generation
-  Generate comprehensive unit tests for existing code
-  Tags: testing, tdd, unit-tests
-  Aliases: tests, unit-testing
-
-  [executeautomation] mcp-playwright
-  Playwright-based browser automation MCP server
-  Tags: mcp, testing, playwright, browser
-```
 
 ---
 
-### `dojo list`
+### `dojo list` (alias: `ls`)
 
-Show all installed skills per agent.
+Show installed skills or configured MCP servers.
 
 ```bash
-dojo list
+dojo list                       # List installed skill files
+dojo list --mcp                 # List configured MCP servers
 ```
 
-**Output example:**
-```
-Claude (.claude/skills/):
-  • test-generation
-  • debugging
+**Options:**
 
-Gemini (.gemini/skills/):
-  • test-generation
-  • debugging
+| Option | Description |
+|--------|-------------|
+| `--mcp` | Show configured MCP servers instead of skills |
+
+---
+
+### `dojo unlearn <skill>` (alias: `rm`)
+
+Remove a skill from agent directories.
+
+```bash
+dojo unlearn test-generation           # Remove skill from project
+dojo unlearn skill-name -g             # Remove globally
+dojo unlearn playwright --mcp          # Remove MCP config only (keep skill files)
+dojo unlearn debugging -y              # Skip confirmation
 ```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `-g, --global` | Remove from global storage and all MCP configs |
+| `--mcp` | Remove MCP server config only (keep skill files) |
+| `--for <agents>` | Remove from specific agents only |
+| `-y, --yes` | Skip confirmation prompt |
+
+> **Note:** Use the exact MCP server name as shown in `dojo list --mcp` (e.g., `playwright`, not `mcp-playwright`).
 
 ---
 
@@ -161,23 +167,6 @@ dojo sync --force      # Overwrite existing skills
 
 ---
 
-### `dojo unlearn <skill>`
-
-Remove a skill from all agents.
-
-```bash
-dojo unlearn test-generation       # Remove with confirmation prompt
-dojo unlearn debugging --yes       # Skip confirmation
-```
-
-**Options:**
-
-| Option | Description |
-|--------|-------------|
-| `-y, --yes` | Skip confirmation prompt |
-
----
-
 ### `dojo cache <action>`
 
 Manage the local registry cache.
@@ -186,13 +175,6 @@ Manage the local registry cache.
 dojo cache info        # Show cache statistics
 dojo cache clean       # Clear the cache
 ```
-
-**Actions:**
-
-| Action | Description |
-|--------|-------------|
-| `info` | Display cache size and age |
-| `clean` | Remove all cached registry data |
 
 ---
 
@@ -206,14 +188,14 @@ Dojo includes its own MCP server for natural language skill discovery. Once conf
 ### Auto-Install via CLI
 
 ```bash
-dojo learn mcp-dojo
+dojo learn --mcp dojo
 ```
 
 This automatically configures the MCP server for all detected agents.
 
 ### Manual Configuration
 
-**Claude Desktop** (`~/.claude/claude_desktop_config.json`):
+**Claude** (`~/.claude.json`):
 ```json
 {
   "mcpServers": {

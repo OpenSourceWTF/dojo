@@ -4,15 +4,23 @@
  * See LICENSE file for details.
  */
 
-import { createAgentPlugin, AgentPlugin } from '../plugin.js';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { createAgentPlugin } from '../plugin.js';
 
 /**
- * Codex agent plugin using folder-skill format.
+ * Codex agent plugin.
  * Skills are stored in .codex/skills/{skill}/SKILL.md
  */
-export const codexPlugin: AgentPlugin = createAgentPlugin({
+export const codexPlugin = createAgentPlugin({
   name: 'codex',
   displayName: 'Codex',
   format: 'folder-skill',
-  agentDir: '.codex/skills'
+  agentDir: '.codex/skills',
+  cli: 'codex',
+  mcpConfig: {
+    path: join(homedir(), '.codex', 'config.toml'),
+    format: 'toml',
+    key: 'mcp_servers'
+  }
 });

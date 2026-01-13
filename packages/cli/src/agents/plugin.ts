@@ -36,6 +36,18 @@ export interface RemoveSkillOptions {
 }
 
 /**
+ * MCP configuration for an agent.
+ */
+export interface McpConfig {
+  /** Path to MCP config file (in user's home directory) */
+  readonly path: string;
+  /** Config file format */
+  readonly format: 'json' | 'toml';
+  /** Root key for MCP servers in config file */
+  readonly key: string;
+}
+
+/**
  * Agent plugin interface for extensible agent support.
  * Each AI agent (Claude, Gemini, Cursor, etc.) implements this interface.
  * 
@@ -56,6 +68,12 @@ export interface AgentPlugin {
 
   /** Format plugin for handling skill file operations */
   readonly formatPlugin: SkillFormatPlugin;
+
+  /** Optional MCP configuration (if agent supports MCP servers) */
+  readonly mcpConfig?: McpConfig;
+
+  /** CLI command name for this agent (e.g., 'claude', 'gemini') */
+  readonly cli?: string;
 
   /**
    * Detect if this agent is available in the project.
@@ -97,6 +115,8 @@ export function createAgentPlugin(config: {
   displayName: string;
   format: SkillFormat;
   agentDir: string;
+  mcpConfig?: McpConfig;
+  cli?: string;
 }): AgentPlugin {
   const formatPlugin = getFormatPlugin(config.format);
 
@@ -106,6 +126,8 @@ export function createAgentPlugin(config: {
     format: config.format,
     agentDir: config.agentDir,
     formatPlugin,
+    mcpConfig: config.mcpConfig,
+    cli: config.cli,
 
     detect(projectRoot: string): DetectedAgent | null {
       const fullPath = join(projectRoot, config.agentDir);

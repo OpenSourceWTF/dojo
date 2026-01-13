@@ -126,7 +126,7 @@ describe('Install Library', () => {
       expect(content).toContain('dojo_fqn: @test/basic');
     });
 
-    it('should create .claude/skills when no agents detected', async () => {
+    it('should return failure when no agents detected', async () => {
       // Remove existing agent directory
       await rm(join(tmpRoot, '.claude'), { recursive: true, force: true });
 
@@ -135,8 +135,8 @@ describe('Install Library', () => {
         projectRoot: tmpRoot
       });
 
-      expect(result.success).toBe(true);
-      expect(existsSync(join(tmpRoot, '.claude', 'skills'))).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('No AI agent directories detected');
     });
 
     it('should install to global directory when global flag is set', async () => {
