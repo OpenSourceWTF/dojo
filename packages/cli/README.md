@@ -1,14 +1,14 @@
-# @opensourcewtf/dojo-cli
+# @opensourcewtf/dojo
 
 > CLI for managing AI agent skills
 
-[![npm version](https://img.shields.io/npm/v/@opensourcewtf/dojo-cli.svg)](https://www.npmjs.com/package/@opensourcewtf/dojo-cli)
+[![npm version](https://img.shields.io/npm/v/@opensourcewtf/dojo.svg)](https://www.npmjs.com/package/@opensourcewtf/dojo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Install
 
 ```bash
-npm install -g @opensourcewtf/dojo-cli
+npm install -g @opensourcewtf/dojo
 ```
 
 ## Usage
@@ -46,7 +46,7 @@ Skills are installed to all detected agent directories:
 ## API
 
 ```typescript
-import { learn } from '@opensourcewtf/dojo-cli';
+import { learn } from '@opensourcewtf/dojo';
 
 await learn('@anthropics/create-docx', {
   registryPath: './registry'
