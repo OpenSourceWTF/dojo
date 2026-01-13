@@ -1,6 +1,6 @@
 {
   "name": "@opensourcewtf/dojo-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Dojo Skill Manager MCP Server - Model Context Protocol server for AI agent skill discovery",
   "author": "OpenSourceWTF",
   "license": "MIT",
@@ -37,10 +37,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@hono/node-server": "^1.8.0",
     "@modelcontextprotocol/sdk": "^1.0.1",
-    "@opensourcewtf/dojo": "workspace:*",
-    "hono": "^4.0.0"
+    "@opensourcewtf/dojo": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
