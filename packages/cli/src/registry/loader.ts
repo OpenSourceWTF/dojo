@@ -9,8 +9,10 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 // Remote registry configuration - using jsDelivr CDN (unlimited, globally cached)
+// Note: Using 'main' branch for development. Production deployments should use
+// version tags (e.g., v0.1.0) by updating REGISTRY_VERSION for better cache control.
 const REGISTRY_REPO = 'OpenSourceWTF/dojo-skills';
-const REGISTRY_VERSION = 'main';  // TODO: switch to version tags (e.g., v0.1.0) for cache control
+const REGISTRY_VERSION = 'main';
 const REGISTRY_BASE_URL = `https://cdn.jsdelivr.net/gh/${REGISTRY_REPO}@${REGISTRY_VERSION}`;
 
 // Cache configuration
