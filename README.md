@@ -9,7 +9,7 @@
 <h3 align="center">🥋 A package manager for AI agent skills</h3>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@opensourcewtf/dojo-cli"><img src="https://img.shields.io/npm/v/@opensourcewtf/dojo-cli.svg?style=flat-square&color=cb3837" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/@opensourcewtf/dojo"><img src="https://img.shields.io/npm/v/@opensourcewtf/dojo.svg?style=flat-square&color=cb3837" alt="npm"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/OpenSourceWTF/dojo"><img src="https://img.shields.io/github/stars/OpenSourceWTF/dojo?style=flat-square&color=yellow" alt="Stars"></a>
 </p>
@@ -24,7 +24,7 @@
 
 ```bash
 # Install globally
-npm install -g @opensourcewtf/dojo-cli
+npm install -g @opensourcewtf/dojo
 
 # Search for skills
 dojo search testing
@@ -225,7 +225,7 @@ This automatically configures the MCP server for all detected agents.
 
 | Package | Description |
 |---------|-------------|
-| [`@opensourcewtf/dojo-cli`](https://www.npmjs.com/package/@opensourcewtf/dojo-cli) | CLI for skill management |
+| [`@opensourcewtf/dojo`](https://www.npmjs.com/package/@opensourcewtf/dojo) | CLI for skill management |
 | [`@opensourcewtf/dojo-mcp`](https://www.npmjs.com/package/@opensourcewtf/dojo-mcp) | MCP server for AI agents |
 
 ---
@@ -255,7 +255,7 @@ pnpm test
 
 ```
 packages/
-├── cli/     # @opensourcewtf/dojo-cli
+├── cli/     # @opensourcewtf/dojo
 └── mcp/     # @opensourcewtf/dojo-mcp
 ```
 

@@ -1,5 +1,5 @@
 {
-  "name": "@opensourcewtf/dojo-cli",
+  "name": "@opensourcewtf/dojo",
   "version": "0.1.0",
   "description": "Dojo Skill Manager CLI - A package manager for AI agent skills",
   "author": "OpenSourceWTF",
