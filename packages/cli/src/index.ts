@@ -32,7 +32,7 @@ Examples:
 program.command('learn')
   .alias('add')
   .description('Install a skill from the registry')
-  .argument('<skill>', 'Skill name, FQN (@org/skill), or alias')
+  .argument('<skills...>', 'Skill name(s), FQN (@org/skill), or alias')
   .option('-g, --global', 'Install to global ~/.dojo/skills (shared across projects)')
   .option('--registry <url>', 'Custom registry (local path or github:owner/repo)')
   .option('--mcp', 'Install MCP servers only (skip skill files)')
@@ -40,17 +40,22 @@ program.command('learn')
   .addHelpText('after', `
 Examples:
   $ dojo learn tdd                    # Install by name
+  $ dojo learn tdd debugging          # Install multiple skills
   $ dojo learn @anthropics/create-docx # Install by FQN
-  $ dojo learn mcp-playwright --mcp   # Install MCP server only
+  $ dojo learn playwright --mcp       # Install MCP server only
   $ dojo learn my-skill --for=claude  # Install to Claude only
   $ dojo learn skill -g               # Install globally
 `)
-  .action((skill, opts) => learn(skill, {
-    registry: opts.registry,
-    mcpMode: opts.mcp,
-    forAgents: opts.for ? opts.for.split(',') : undefined,
-    global: opts.global
-  }));
+  .action(async (skills, opts) => {
+    for (const skill of skills) {
+      await learn(skill, {
+        registry: opts.registry,
+        mcpMode: opts.mcp,
+        forAgents: opts.for ? opts.for.split(',') : undefined,
+        global: opts.global
+      });
+    }
+  });
 
 // Search command
 program.command('search')
@@ -94,7 +99,7 @@ Examples:
 program.command('unlearn')
   .alias('rm')
   .description('Remove a skill from agent directories')
-  .argument('<skill>', 'Skill name to remove')
+  .argument('<skills...>', 'Skill name(s) to remove')
   .option('-g, --global', 'Remove from global storage and all MCP configs')
   .option('-y, --yes', 'Skip confirmation prompt')
   .option('--mcp', 'Remove MCP servers only (keep skill files)')
@@ -102,17 +107,22 @@ program.command('unlearn')
   .addHelpText('after', `
 Examples:
   $ dojo unlearn my-skill             # Remove local skill
+  $ dojo unlearn skill1 skill2        # Remove multiple skills
   $ dojo rm my-skill                  # Alias for unlearn
   $ dojo unlearn my-skill -g          # Remove globally
   $ dojo unlearn server --mcp -g      # Remove MCP server config only
   $ dojo unlearn skill --for=claude   # Remove from Claude only
 `)
-  .action((skill, opts) => unlearn(skill, {
-    yes: opts.yes,
-    global: opts.global,
-    mcpMode: opts.mcp,
-    forAgents: opts.for ? opts.for.split(',') : undefined
-  }));
+  .action(async (skills, opts) => {
+    for (const skill of skills) {
+      await unlearn(skill, {
+        yes: opts.yes,
+        global: opts.global,
+        mcpMode: opts.mcp,
+        forAgents: opts.for ? opts.for.split(',') : undefined
+      });
+    }
+  });
 
 // Cache command
 program.command('cache')
