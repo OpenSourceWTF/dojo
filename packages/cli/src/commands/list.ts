@@ -5,97 +5,102 @@
  */
 
 import chalk from 'chalk';
-import { readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { plugins } from '../agents/plugins/index.js';
+import type { DetectedAgent } from '../agents/plugin.js';
 
-export interface InstalledSkills {
-  claude: string[];
-  gemini: string[];
-  cursor: string[];
+export interface InstalledSkill {
+  name: string;
+  path: string;
+}
+
+export interface AgentSkills {
+  agent: DetectedAgent;
+  skills: InstalledSkill[];
 }
 
 /**
- * Get installed skills for each agent type.
+ * Get installed skills using the plugin system.
+ * Detects all agents and lists their skills using plugin.listSkills().
  */
-export function getInstalledSkills(projectRoot: string): InstalledSkills {
-  const result: InstalledSkills = {
-    claude: [],
-    gemini: [],
-    cursor: [],
-  };
+export function getInstalledSkillsFromPlugins(projectRoot: string): AgentSkills[] {
+  const results: AgentSkills[] = [];
 
-  // Claude (.claude/skills/*.md)
-  const claudePath = join(projectRoot, '.claude', 'skills');
-  if (existsSync(claudePath)) {
-    result.claude = readdirSync(claudePath).filter((f) => f.endsWith('.md'));
+  for (const plugin of plugins) {
+    const detected = plugin.detect(projectRoot);
+    if (!detected) continue;
+
+    // Use plugin's listSkills method - delegates to format plugin
+    const skillNames = plugin.listSkills(projectRoot);
+    const skills: InstalledSkill[] = skillNames.map(name => ({
+      name,
+      path: plugin.getSkillPath(projectRoot, name)
+    }));
+
+    results.push({ agent: detected, skills });
   }
 
-  // Gemini (.agent/workflows/*.md)
-  const geminiPath = join(projectRoot, '.agent', 'workflows');
-  if (existsSync(geminiPath)) {
-    result.gemini = readdirSync(geminiPath).filter((f) => f.endsWith('.md'));
-  }
+  return results;
+}
 
-  // Cursor (.cursor/rules/{name}/RULE.md)
-  const cursorPath = join(projectRoot, '.cursor', 'rules');
-  if (existsSync(cursorPath)) {
-    result.cursor = readdirSync(cursorPath).filter((name) => {
-      const rulePath = join(cursorPath, name, 'RULE.md');
-      return existsSync(rulePath) && statSync(join(cursorPath, name)).isDirectory();
-    });
+/**
+ * Get installed skills grouped by agent name (legacy format).
+ */
+export function getInstalledSkills(projectRoot: string): Record<string, string[]> {
+  const agentSkills = getInstalledSkillsFromPlugins(projectRoot);
+  const result: Record<string, string[]> = {};
+
+  for (const { agent, skills } of agentSkills) {
+    result[agent.name] = skills.map(s => s.name);
   }
 
   return result;
 }
 
 /**
- * List installed skills per agent.
- * Note: When called from Commander, the first argument is options object.
+ * Get display path for an agent.
  */
-export async function list(options?: any): Promise<void> {
+function getAgentPathDisplay(agentName: string): string {
+  // Get plugin to derive path from its configuration
+  const plugin = plugins.find(p => p.name === agentName);
+  if (!plugin) return agentName;
+  return plugin.agentDir;
+}
+
+/**
+ * List installed skills command.
+ */
+export async function list(): Promise<void> {
   const projectRoot = process.cwd();
-  const skills = getInstalledSkills(projectRoot);
+  const agentSkills = getInstalledSkillsFromPlugins(projectRoot);
 
   console.log('Installed Skills:\n');
 
-  // Claude
-  console.log(chalk.cyan('Claude') + ' (.claude/skills/):');
-  if (skills.claude.length > 0) {
-    for (const skill of skills.claude) {
-      console.log(`  • ${skill}`);
+  let totalSkills = 0;
+  let totalAgents = 0;
+
+  for (const { agent, skills } of agentSkills) {
+    totalAgents++;
+    const displayPath = getAgentPathDisplay(agent.name);
+
+    console.log(chalk.bold(`${agent.name.charAt(0).toUpperCase() + agent.name.slice(1)} (${displayPath}):`));
+
+    if (skills.length === 0) {
+      console.log('  (none detected)');
+    } else {
+      for (const skill of skills) {
+        console.log(`  • ${skill.name}`);
+        totalSkills++;
+      }
     }
-  } else {
-    console.log('  (none detected)');
+
+    console.log('');
   }
-  console.log('');
 
-  // Gemini
-  console.log(chalk.green('Gemini') + ' (.agent/workflows/):');
-  if (skills.gemini.length > 0) {
-    for (const skill of skills.gemini) {
-      console.log(`  • ${skill}`);
-    }
+  if (agentSkills.length === 0) {
+    console.log(chalk.yellow('No agent directories detected.'));
+    console.log('Create .claude/skills/, .gemini/skills/, or other agent directories first.\n');
   } else {
-    console.log('  (none detected)');
+    console.log(`Total: ${totalSkills} skills across ${totalAgents} agents`);
   }
-  console.log('');
-
-  // Cursor
-  console.log(chalk.yellow('Cursor') + ' (.cursor/rules/):');
-  if (skills.cursor.length > 0) {
-    for (const skill of skills.cursor) {
-      console.log(`  • ${skill}`);
-    }
-  } else {
-    console.log('  (none detected)');
-  }
-  console.log('');
-
-  // Total
-  const agentCount = [skills.claude, skills.gemini, skills.cursor].filter(
-    (arr) => arr.length > 0
-  ).length;
-
-  const totalSkills = skills.claude.length + skills.gemini.length + skills.cursor.length;
-  console.log(`Total: ${totalSkills} skills across ${agentCount} agents`);
 }

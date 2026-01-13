@@ -35,9 +35,11 @@ describe('E2E: Multi-Format Sync', () => {
   }
 
   it('should sync skill from Claude to Gemini as 1:1 copy', async () => {
-    // 1. Create skill in Claude format
+    // 1. Create skill in Claude format (folder-skill)
     const skillContent = '# Test Skill\n\nThis is a test skill for sync testing.';
-    await writeFile(join(tmpRoot, '.claude/skills/test-skill.md'), skillContent);
+    const skillDir = join(tmpRoot, '.claude/skills/test-skill');
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, 'SKILL.md'), skillContent);
 
     // 2. Run sync
     const { stdout } = await runDojo('sync');
@@ -53,9 +55,11 @@ describe('E2E: Multi-Format Sync', () => {
   });
 
   it('should sync skill from Claude to Cursor with YAML frontmatter', async () => {
-    // 1. Create skill in Claude format
+    // 1. Create skill in Claude format (folder-skill)
     const skillContent = '# Test Skill\n\nThis is a test skill for Cursor format.';
-    await writeFile(join(tmpRoot, '.claude/skills/test-skill.md'), skillContent);
+    const skillDir = join(tmpRoot, '.claude/skills/test-skill');
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, 'SKILL.md'), skillContent);
 
     // 2. Run sync
     await runDojo('sync');
@@ -79,7 +83,9 @@ describe('E2E: Multi-Format Sync', () => {
   it('should propagate updates on re-sync with --force', async () => {
     // 1. Create initial skill
     const initialContent = '# Initial Skill\n\nInitial content.';
-    await writeFile(join(tmpRoot, '.claude/skills/update-test.md'), initialContent);
+    const skillDir = join(tmpRoot, '.claude/skills/update-test');
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, 'SKILL.md'), initialContent);
 
     // 2. First sync
     await runDojo('sync');
@@ -91,7 +97,7 @@ describe('E2E: Multi-Format Sync', () => {
 
     // 4. Modify source
     const updatedContent = '# Updated Skill\n\nUpdated content.';
-    await writeFile(join(tmpRoot, '.claude/skills/update-test.md'), updatedContent);
+    await writeFile(join(skillDir, 'SKILL.md'), updatedContent);
 
     // 5. Re-sync with force flag
     await runDojo('sync --force');
@@ -106,15 +112,13 @@ describe('E2E: Multi-Format Sync', () => {
   });
 
   it('should sync multiple skills correctly', async () => {
-    // Create multiple skills
-    await writeFile(
-      join(tmpRoot, '.claude/skills/skill-one.md'),
-      '# Skill One\n\nFirst skill.'
-    );
-    await writeFile(
-      join(tmpRoot, '.claude/skills/skill-two.md'),
-      '# Skill Two\n\nSecond skill.'
-    );
+    // Create multiple skills (with directories)
+    const skill1Dir = join(tmpRoot, '.claude/skills/skill-one');
+    const skill2Dir = join(tmpRoot, '.claude/skills/skill-two');
+    await mkdir(skill1Dir, { recursive: true });
+    await mkdir(skill2Dir, { recursive: true });
+    await writeFile(join(skill1Dir, 'SKILL.md'), '# Skill One\n\nFirst skill.');
+    await writeFile(join(skill2Dir, 'SKILL.md'), '# Skill Two\n\nSecond skill.');
 
     // Sync
     const { stdout } = await runDojo('sync');

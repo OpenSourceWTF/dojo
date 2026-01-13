@@ -5,8 +5,7 @@
  */
 
 import chalk from 'chalk';
-import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { claudePlugin } from '../agents/plugins/claude.js';
 import { detectAgents } from '../agents/detector.js';
 import { syncClaudeToGemini } from '../sync/gemini.js';
 import { syncClaudeToCursor } from '../sync/cursor.js';
@@ -23,34 +22,35 @@ interface SyncResult {
 
 export async function sync(options: SyncOptions = {}) {
   const projectRoot = process.cwd();
-  const claudeDir = join(projectRoot, '.claude', 'skills');
 
   console.log(chalk.blue('🔄 Syncing skills...\n'));
 
-  // Check for canonical source (Claude)
-  if (!existsSync(claudeDir)) {
+  // Check for canonical source (Claude) using plugin
+  const claudeAgent = claudePlugin.detect(projectRoot);
+  if (!claudeAgent) {
     console.log(chalk.red('❌ No canonical source found. Create .claude/skills/ first'));
     process.exit(1);
   }
 
-  // Count source skills
-  const sourceFiles = readdirSync(claudeDir).filter(f => f.endsWith('.md'));
-  const skillCount = sourceFiles.length;
+  // Count source skills using plugin
+  const sourceSkills = claudePlugin.listSkills(projectRoot);
+  const skillCount = sourceSkills.length;
 
   if (skillCount === 0) {
     console.log(chalk.yellow('⚠️  No skills found in .claude/skills/'));
     return;
   }
 
-  console.log(chalk.white(`Source: .claude/skills/ (${skillCount} skills)\n`));
+  console.log(chalk.white(`Source: ${claudePlugin.agentDir} (${skillCount} skills)\n`));
 
   // Detect target agents
   const agents = detectAgents(projectRoot);
   const results: SyncResult[] = [];
 
-  // Sync to Gemini if detected
+  // Sync to Gemini/Antigravity if detected
   const geminiAgent = agents.find(a => a.name === 'gemini');
-  if (geminiAgent) {
+  const antigravityAgent = agents.find(a => a.name === 'antigravity');
+  if (geminiAgent || antigravityAgent) {
     const { synced, skipped } = syncClaudeToGemini(projectRoot, { force: options.force });
     results.push({
       agent: '.agent/workflows/',

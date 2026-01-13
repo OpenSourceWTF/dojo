@@ -83,10 +83,10 @@ describe('E2E: CLI Install Flow', () => {
     const { stdout } = await runDojo(`learn --registry ${registryPath} @test/create-docx`);
 
     expect(stdout).toContain('Installing @test/create-docx');
-    expect(stdout).toContain('Installed to:');
+    expect(stdout).toContain('Installed!');
 
     // Verify file existence
-    const claudePath = join(tmpRoot, '.claude/skills/create-docx.md');
+    const claudePath = join(tmpRoot, '.claude/skills/create-docx/SKILL.md');
     const geminiPath = join(tmpRoot, '.agent/workflows/create-docx.md');
 
     expect(await readFile(claudePath, 'utf-8')).toContain('# Test Skill');
@@ -101,7 +101,7 @@ describe('E2E: CLI Install Flow', () => {
 
     expect(stdout).toContain('Claude');
     expect(stdout).toContain('create-docx');
-    expect(stdout).toContain('Gemini');
+    expect(stdout).toContain('Antigravity');
   });
 
   it('should unlearn a skill', async () => {
@@ -109,7 +109,7 @@ describe('E2E: CLI Install Flow', () => {
     await runDojo(`learn --registry ${registryPath} @test/create-docx`);
 
     // Verify installed
-    const claudePath = join(tmpRoot, '.claude/skills/create-docx.md');
+    const claudePath = join(tmpRoot, '.claude/skills/create-docx/SKILL.md');
     expect(await readFile(claudePath, 'utf-8')).toBeTruthy();
 
     // Unlearn (with -y flag to skip confirmation)

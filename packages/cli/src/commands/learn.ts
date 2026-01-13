@@ -8,21 +8,25 @@ import chalk from 'chalk';
 import { searchRegistry, loadRegistry, SkillEntry } from '../registry/index.js';
 import { resolveSkill, detectCycle } from '../resolver/dependencies.js';
 import { downloadSkill } from '../download/github.js';
-import { detectAgents, DetectedAgent } from '../agents/detector.js';
+import { detectAgents, getPluginForAgent } from '../agents/detector.js';
+import type { DetectedAgent } from '../agents/plugin.js';
 import { addMcpServersToConfig } from '../mcp/config.js';
 import { prompt } from '../utils/prompt.js';
-import { join, relative, dirname } from 'node:path';
-import { mkdir, writeFile, readFile, symlink, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 
 interface LearnOptions {
   registry?: string;  // Local path, github:owner/repo, or URL
   skillOnly?: boolean; // Install skill/workflow files only
   mcpOnly?: boolean;   // Install MCP servers only
+  forAgents?: string[]; // Specific agents to install for
+  global?: boolean;    // Install to global ~/.dojo/skills instead of project-local
 }
 
-// Canonical skill storage location
-const DOJO_SKILLS_DIR = join(homedir(), '.dojo', 'skills');
+// Skill storage locations
+const GLOBAL_SKILLS_DIR = join(homedir(), '.dojo', 'skills');
+const getLocalSkillsDir = (projectRoot: string) => join(projectRoot, '.dojo', 'skills');
 
 /**
  * Parse skill input like "kungfu", "kungfu@1.0.0", or "@anthropics/create-docx"
@@ -128,67 +132,6 @@ async function promptUserSelection(matches: { fqn: string; skill: SkillEntry }[]
   throw new Error('Invalid selection');
 }
 
-/**
- * Create symlink from agent directory to canonical skill
- */
-async function symlinkSkillToAgent(
-  agent: DetectedAgent,
-  skillName: string,
-  canonicalPath: string,
-  projectRoot: string
-): Promise<string> {
-  let destPath: string;
-
-  switch (agent.format) {
-    case 'flat-md':
-      // Claude and Gemini use flat .md files
-      destPath = join(agent.path, `${skillName}.md`);
-      await mkdir(agent.path, { recursive: true });
-
-      // Remove existing file/symlink if present
-      try {
-        await unlink(destPath);
-      } catch {
-        // Doesn't exist, that's fine
-      }
-
-      // Create relative symlink
-      const relPath = relative(dirname(destPath), canonicalPath);
-      await symlink(relPath, destPath);
-      break;
-
-    case 'folder-rule':
-      // Cursor uses folder/RULE.md structure - needs actual file with special frontmatter
-      const folderPath = join(agent.path, skillName);
-      destPath = join(folderPath, 'RULE.md');
-      await mkdir(folderPath, { recursive: true });
-
-      // Read canonical content and add Cursor-specific frontmatter
-      const content = await readFile(canonicalPath, 'utf-8');
-      const lines = content.split('\n');
-      let description = 'Imported from dojo';
-      if (lines.length > 0 && lines[0].trim().length > 0) {
-        description = lines[0].trim().replace(/^#\s*/, '');
-      }
-
-      const cursorContent = `---
-name: ${skillName}
-alwaysApply: false
-description: ${description}
-dojo_canonical: ${canonicalPath}
----
-
-${content}`;
-      await writeFile(destPath, cursorContent);
-      break;
-
-    default:
-      throw new Error(`Unknown agent format: ${agent.format}`);
-  }
-
-  return destPath;
-}
-
 export async function learn(skill: string, options: LearnOptions = {}) {
   const projectRoot = process.cwd();
 
@@ -258,17 +201,37 @@ export async function learn(skill: string, options: LearnOptions = {}) {
   });
 
   // 7. Detect agents
-  const agents = detectAgents(projectRoot);
+  let agents = detectAgents(projectRoot);
 
-  if (agents.length === 0) {
+  if (options.forAgents && options.forAgents.length > 0) {
+    const allowed = new Set(options.forAgents.map(a => a.toLowerCase().trim()));
+    agents = agents.filter(a => allowed.has(a.name));
+
+    // If user asked for an agent that isn't detected, we should probably warn or auto-create?
+    // For now, let's just stick to what's detected + filtered, but maybe ensure
+    // we don't end up with empty list if they asked for 'claude' and we have it.
+    if (agents.length === 0) {
+      console.log(chalk.yellow(`\n⚠️  No detected agents matched the filter "${options.forAgents.join(', ')}"`));
+      // Check if they asked for Claude explicitly, maybe force create?
+      if (allowed.has('claude')) {
+        console.log(chalk.yellow('   Forcing Claude creation as requested...'));
+        const claudePath = join(projectRoot, '.claude', 'skills');
+        await mkdir(claudePath, { recursive: true });
+        agents.push({ name: 'claude', path: claudePath, format: 'flat-md' });
+      }
+    }
+  }
+
+  if (agents.length === 0 && (!options.forAgents || options.forAgents.length === 0)) {
     console.log(chalk.yellow('\n⚠️  No agent directories detected. Creating .claude/skills...'));
     const claudePath = join(projectRoot, '.claude', 'skills');
     await mkdir(claudePath, { recursive: true });
     agents.push({ name: 'claude', path: claudePath, format: 'flat-md' });
   }
 
-  // 8. Ensure canonical skills directory exists
-  await mkdir(DOJO_SKILLS_DIR, { recursive: true });
+  // 8. Determine skills directory based on global flag
+  const skillsDir = options.global ? GLOBAL_SKILLS_DIR : getLocalSkillsDir(projectRoot);
+  await mkdir(skillsDir, { recursive: true });
 
   // 9. Download and install each skill
   const installedPaths: string[] = [];
@@ -281,11 +244,18 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     if (skillName.endsWith('.md')) {
       skillName = skillName.slice(0, -3);
     }
+    // Sanitize to kebab-case
+    skillName = skillName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     const skillVersion = version || 'main';
 
-    // Download skill files (unless --mcp flag is set)
-    if (!options.mcpOnly) {
-      const canonicalPath = join(DOJO_SKILLS_DIR, `${skillName}.md`);
+    // Detect MCP-only entry: has mcp_servers but source doesn't point to a .md file
+    const isMcpOnly = entry.mcp_servers && entry.mcp_servers.length > 0 &&
+      !entry.source.endsWith('.md') &&
+      !entry.path?.endsWith('.md');
+
+    // Download skill files (unless --mcp flag is set or this is MCP-only)
+    if (!options.mcpOnly && !isMcpOnly) {
+      const canonicalPath = join(skillsDir, `${skillName}.md`);
 
       try {
         await downloadSkill({
@@ -310,10 +280,17 @@ export async function learn(skill: string, options: LearnOptions = {}) {
       });
       await writeFile(canonicalPath, content);
 
-      // Symlink to all detected agent directories
+      // Install to all detected agent directories using plugins
       for (const agent of agents) {
-        const destPath = await symlinkSkillToAgent(agent, skillName, canonicalPath, projectRoot);
-        installedPaths.push(destPath.replace(projectRoot + '/', ''));
+        const plugin = getPluginForAgent(agent);
+        if (plugin) {
+          const destPath = await plugin.installSkill({
+            projectRoot,
+            skillName,
+            canonicalPath
+          });
+          installedPaths.push(destPath);
+        }
       }
     }
 
@@ -332,7 +309,7 @@ export async function learn(skill: string, options: LearnOptions = {}) {
   // 11. Display success
   console.log(chalk.green('\n✅ Installed!'));
   if (installedPaths.length > 0) {
-    console.log(chalk.gray(`   📁 ${DOJO_SKILLS_DIR} (canonical)`));
+    console.log(chalk.gray(`   📁 ${skillsDir} ${options.global ? '(global)' : '(local)'}`));
     for (const p of installedPaths) {
       console.log(chalk.gray(`   ↪ ${p}`));
     }

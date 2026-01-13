@@ -124,13 +124,13 @@ describe('E2E: Dependency Chain Resolution', () => {
       // All 3 skills should be mentioned
       expect(stdout).toContain('skill-a');
 
-      // Verify all files exist
+      // Verify all skill directories exist (folder-skill format)
       const claudeSkillsDir = join(tmpRoot, '.claude/skills');
       const files = await readdir(claudeSkillsDir);
 
-      expect(files).toContain('skill-a.md');
-      expect(files).toContain('skill-b.md');
-      expect(files).toContain('skill-c.md');
+      expect(files).toContain('skill-a');
+      expect(files).toContain('skill-b');
+      expect(files).toContain('skill-c');
     });
 
     it('should install base dependency first (skill-c)', async () => {
@@ -139,7 +139,7 @@ describe('E2E: Dependency Chain Resolution', () => {
       await runDojo(`learn --registry ${registryPath} @test/skill-a`);
 
       // Verify skill-c (no dependencies) is installed
-      const skillCPath = join(tmpRoot, '.claude/skills/skill-c.md');
+      const skillCPath = join(tmpRoot, '.claude/skills/skill-c/SKILL.md');
       expect(existsSync(skillCPath)).toBe(true);
 
       const content = await readFile(skillCPath, 'utf-8');
@@ -152,7 +152,7 @@ describe('E2E: Dependency Chain Resolution', () => {
       await runDojo(`learn --registry ${registryPath} @test/skill-a`);
 
       // Verify skill-b is installed
-      const skillBPath = join(tmpRoot, '.claude/skills/skill-b.md');
+      const skillBPath = join(tmpRoot, '.claude/skills/skill-b/SKILL.md');
       expect(existsSync(skillBPath)).toBe(true);
 
       const content = await readFile(skillBPath, 'utf-8');
@@ -165,7 +165,7 @@ describe('E2E: Dependency Chain Resolution', () => {
       await runDojo(`learn --registry ${registryPath} @test/skill-a`);
 
       // Verify skill-a is installed
-      const skillAPath = join(tmpRoot, '.claude/skills/skill-a.md');
+      const skillAPath = join(tmpRoot, '.claude/skills/skill-a/SKILL.md');
       expect(existsSync(skillAPath)).toBe(true);
 
       const content = await readFile(skillAPath, 'utf-8');
@@ -181,9 +181,10 @@ describe('E2E: Dependency Chain Resolution', () => {
         await runDojo(`learn --registry ${registryPath} @test/cycle-a`);
         // If no error thrown, check stdout for cycle message
         expect.fail('Should have thrown or printed cycle error');
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Command failed - check stderr/stdout for cycle message
-        const output = error.stdout + error.stderr;
+        const execError = error as { stdout?: string; stderr?: string };
+        const output = (execError.stdout || '') + (execError.stderr || '');
         // Should mention cycle or circular dependency
         expect(
           output.toLowerCase().includes('cycle') ||
@@ -199,8 +200,9 @@ describe('E2E: Dependency Chain Resolution', () => {
       try {
         await runDojo(`learn --registry ${registryPath} @test/cycle-a`);
         expect.fail('Should have thrown error');
-      } catch (error: any) {
-        const output = error.stdout + error.stderr;
+      } catch (error: unknown) {
+        const execError = error as { stdout?: string; stderr?: string };
+        const output = (execError.stdout || '') + (execError.stderr || '');
         // Error should mention both skills in the cycle
         expect(output).toContain('cycle-a');
         expect(output).toContain('cycle-b');

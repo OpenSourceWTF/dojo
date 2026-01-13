@@ -29,17 +29,17 @@ describe('Agent Detector', () => {
     expect(agents[0]).toMatchObject({
       name: 'claude',
       path: join(tmpRoot, '.claude/skills'),
-      format: 'flat-md'
+      format: 'folder-skill'
     });
     expect(hasAgents(tmpRoot)).toBe(true);
   });
 
-  it('should detect Gemini agent', async () => {
+  it('should detect Antigravity agent', async () => {
     await mkdir(join(tmpRoot, '.agent/workflows'), { recursive: true });
 
     const agents = detectAgents(tmpRoot);
     expect(agents).toHaveLength(1);
-    expect(agents[0].name).toBe('gemini');
+    expect(agents[0].name).toBe('antigravity');
     expect(agents[0].path).toBe(join(tmpRoot, '.agent/workflows'));
   });
 

@@ -1,7 +1,42 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Environment
 .env
-.worktrees/
+.env.local
+.env.*.local
+
+# Logs
 *.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Test coverage
 coverage/
+
+# Git worktrees
+.worktrees/
+
+# AI Agent directories (created by dojo learn)
+.claude/
+.gemini/
+.cursor/
+.codex/
+.dojo/
+.agent/
+
+# WAAAH orchestration (development)
+.waaah/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

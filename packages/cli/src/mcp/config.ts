@@ -5,63 +5,42 @@
  */
 
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { execSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import chalk from 'chalk';
-import { prompt } from '../utils/prompt.js';
 import { McpServerConfig } from '../registry/loader.js';
 
-// Known MCP config locations
-const MCP_CONFIG_OPTIONS = [
-  { name: 'Claude Desktop', path: join(homedir(), '.claude', 'claude_desktop_config.json') },
-  { name: 'Cursor', path: join(homedir(), '.cursor', 'mcp.json') },
-  { name: 'VS Code Roo', path: join(homedir(), '.vscode', 'roo_mcp.json') },
+// Agent MCP config definitions
+interface AgentMcpConfig {
+  name: string;
+  cli: string;           // CLI command to check for
+  path: string;
+  format: 'json' | 'toml';
+  key: string; // Root key for MCP servers (e.g., 'mcpServers')
+}
+
+const AGENT_MCP_CONFIGS: AgentMcpConfig[] = [
+  { name: 'Claude', cli: 'claude', path: join(homedir(), '.claude', 'claude_desktop_config.json'), format: 'json', key: 'mcpServers' },
+  { name: 'Gemini', cli: 'gemini', path: join(homedir(), '.gemini', 'settings.json'), format: 'json', key: 'mcpServers' },
+  { name: 'Antigravity', cli: 'gemini', path: join(homedir(), '.gemini', 'antigravity', 'mcp_config.json'), format: 'json', key: 'mcpServers' },
+  { name: 'Codex', cli: 'codex', path: join(homedir(), '.codex', 'config.toml'), format: 'toml', key: 'mcp_servers' },
 ];
 
-// Dojo preferences cache
-const DOJO_PREFS_PATH = join(homedir(), '.dojo', 'preferences.json');
-
-interface DojoPreferences {
-  mcpConfigPath?: string;
-}
-
-interface McpConfig {
-  mcpServers?: Record<string, {
-    command: string;
-    args: string[];
-    env?: Record<string, string>;
-  }>;
-}
-
 /**
- * Load Dojo preferences.
- * 
- * @returns The saved preferences or empty object
+ * Check if a CLI command exists in PATH.
  */
-async function loadPreferences(): Promise<DojoPreferences> {
+function cliExists(command: string): boolean {
   try {
-    const content = await readFile(DOJO_PREFS_PATH, 'utf-8');
-    return JSON.parse(content);
+    execSync(`which ${command}`, { stdio: 'ignore' });
+    return true;
   } catch {
-    return {};
+    return false;
   }
 }
 
 /**
- * Save Dojo preferences.
- * 
- * @param prefs - Preferences to save
- */
-async function savePreferences(prefs: DojoPreferences): Promise<void> {
-  await mkdir(dirname(DOJO_PREFS_PATH), { recursive: true });
-  await writeFile(DOJO_PREFS_PATH, JSON.stringify(prefs, null, 2));
-}
-
-/**
  * Check if a file exists.
- * 
- * @param path - Path to check
- * @returns True if file exists
  */
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -73,185 +52,236 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 /**
- * Prompt user to select MCP config file.
- * 
- * @param defaultPath - Optional default path from preferences
- * @returns Selected config file path
+ * Load JSON config file.
  */
-async function promptMcpConfigSelection(defaultPath?: string): Promise<string> {
-  // Find existing configs
-  const existingConfigs: typeof MCP_CONFIG_OPTIONS = [];
-  for (const opt of MCP_CONFIG_OPTIONS) {
-    if (await fileExists(opt.path)) {
-      existingConfigs.push(opt);
-    }
-  }
-
-  // If only one exists, use it
-  if (existingConfigs.length === 1) {
-    console.log(chalk.gray(`   Using ${existingConfigs[0].name} config`));
-    return existingConfigs[0].path;
-  }
-
-  // If default exists and is valid, offer to use it
-  if (defaultPath && await fileExists(defaultPath)) {
-    const defaultName = MCP_CONFIG_OPTIONS.find(o => o.path === defaultPath)?.name || 'Custom';
-    console.log(chalk.gray(`   Default: ${defaultName} (${defaultPath})`));
-
-    const answer = await prompt('   Use default? [Y/n]: ');
-    if (answer.toLowerCase() !== 'n') {
-      return defaultPath;
-    }
-  }
-
-  // Show options
-  console.log(chalk.yellow('\n   Select MCP config file:\n'));
-
-  const options = existingConfigs.length > 0 ? existingConfigs : MCP_CONFIG_OPTIONS;
-  options.forEach((opt, i) => {
-    const exists = existingConfigs.some(e => e.path === opt.path);
-    const status = exists ? chalk.green('(exists)') : chalk.gray('(will create)');
-    console.log(`   ${chalk.cyan(`[${i + 1}]`)} ${opt.name} ${status}`);
-    console.log(chalk.gray(`       ${opt.path}`));
-  });
-
-  const answer = await prompt('\n   Enter number: ');
-  const index = parseInt(answer, 10) - 1;
-
-  if (index >= 0 && index < options.length) {
-    return options[index].path;
-  }
-
-  // Default to Claude Desktop
-  return MCP_CONFIG_OPTIONS[0].path;
-}
-
-/**
- * Load MCP config from a path.
- * 
- * @param configPath - Path to config file
- * @returns Parsed config or empty mcpServers object
- */
-async function loadMcpConfig(configPath: string): Promise<McpConfig> {
+async function loadJsonConfig(path: string): Promise<Record<string, unknown>> {
   try {
-    const content = await readFile(configPath, 'utf-8');
+    const content = await readFile(path, 'utf-8');
     return JSON.parse(content);
   } catch {
-    return { mcpServers: {} };
+    return {};
   }
 }
 
 /**
- * Save MCP config to a path.
- * 
- * @param configPath - Path to save config
- * @param config - Config object to save
+ * Save JSON config file.
  */
-async function saveMcpConfig(configPath: string, config: McpConfig): Promise<void> {
-  await mkdir(dirname(configPath), { recursive: true });
-  await writeFile(configPath, JSON.stringify(config, null, 2));
+async function saveJsonConfig(path: string, config: Record<string, unknown>): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(config, null, 2));
 }
 
 /**
- * Add MCP servers to config (with user selection).
+ * Load TOML config file (simple parser for MCP server section).
+ */
+async function loadTomlConfig(path: string): Promise<{ raw: string; servers: Record<string, unknown> }> {
+  try {
+    const content = await readFile(path, 'utf-8');
+    // Simple parsing: extract mcp_servers sections
+    const servers: Record<string, unknown> = {};
+    const regex = /\[mcp_servers\.([^\]]+)\]/g;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      servers[match[1]] = true; // Just track existence for now
+    }
+    return { raw: content, servers };
+  } catch {
+    return { raw: '', servers: {} };
+  }
+}
+
+/**
+ * Add MCP server to TOML config (appends section).
+ */
+function addServerToToml(raw: string, server: McpServerConfig): string {
+  const section = `
+[mcp_servers.${server.name}]
+command = "${server.command}"
+args = ${JSON.stringify(server.args)}
+${server.env ? `env = ${JSON.stringify(server.env)}` : ''}
+`;
+  return raw + section;
+}
+import { prompt } from '../utils/prompt.js';
+
+/**
+ * Prompt user for required environment variables.
+ * Defaults to existing environment values if available.
+ */
+async function promptForEnvVars(serverName: string, envTemplate: Record<string, string>): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+
+  for (const [key, templateValue] of Object.entries(envTemplate)) {
+    // Check if env var exists in current environment
+    const envValue = process.env[key];
+    const defaultValue = envValue || templateValue;
+    const isPlaceholder = !defaultValue || defaultValue.startsWith('${') || defaultValue === '';
+
+    let promptText: string;
+    if (isPlaceholder) {
+      promptText = `     ${key}: `;
+    } else {
+      // Show masked default for sensitive values
+      const masked = key.toLowerCase().includes('key') || key.toLowerCase().includes('secret')
+        ? '***'
+        : defaultValue;
+      promptText = `     ${key} [${masked}]: `;
+    }
+
+    const value = await prompt(promptText);
+    result[key] = value || defaultValue || '';
+  }
+
+  return result;
+}
+
+/**
+ * Add MCP servers to a specific agent's config.
+ * Returns { added: string[], skipped: string[] }
+ */
+async function addServersToAgent(agent: AgentMcpConfig, servers: McpServerConfig[], resolvedEnvs: Map<string, Record<string, string>>): Promise<{ added: string[]; skipped: string[] }> {
+  const added: string[] = [];
+  const skipped: string[] = [];
+
+  if (agent.format === 'json') {
+    const config = await loadJsonConfig(agent.path);
+    const mcpServers = (config[agent.key] as Record<string, unknown>) || {};
+
+    for (const server of servers) {
+      if (mcpServers[server.name]) {
+        skipped.push(server.name);
+        continue; // Already exists
+      }
+
+      const env = resolvedEnvs.get(server.name);
+      mcpServers[server.name] = {
+        command: server.command,
+        args: server.args,
+        ...(env && Object.keys(env).length > 0 && { env })
+      };
+      added.push(server.name);
+    }
+
+    if (added.length > 0) {
+      config[agent.key] = mcpServers;
+      await saveJsonConfig(agent.path, config);
+    }
+  } else if (agent.format === 'toml') {
+    let { raw, servers: existingServers } = await loadTomlConfig(agent.path);
+
+    for (const server of servers) {
+      if (existingServers[server.name]) {
+        skipped.push(server.name);
+        continue; // Already exists
+      }
+
+      const env = resolvedEnvs.get(server.name);
+      const serverWithEnv = { ...server, env };
+      raw = addServerToToml(raw, serverWithEnv);
+      added.push(server.name);
+    }
+
+    if (added.length > 0) {
+      await mkdir(dirname(agent.path), { recursive: true });
+      await writeFile(agent.path, raw);
+    }
+  }
+
+  return { added, skipped };
+}
+
+/**
+ * Add MCP servers to ALL detected agent configs.
  * 
  * @param servers - Array of MCP server configurations to add
- * @returns Array of server names that were added
+ * @returns Record of agent names to arrays of added server names
  */
-export async function addMcpServersToConfig(servers: McpServerConfig[]): Promise<string[]> {
-  if (servers.length === 0) return [];
+export async function addMcpServersToConfig(servers: McpServerConfig[]): Promise<Record<string, string[]>> {
+  if (servers.length === 0) return {};
 
-  // Load preferences to get default config path
-  const prefs = await loadPreferences();
-
-  // Prompt for config selection
-  const configPath = await promptMcpConfigSelection(prefs.mcpConfigPath);
-
-  // Save preference for next time
-  if (configPath !== prefs.mcpConfigPath) {
-    prefs.mcpConfigPath = configPath;
-    await savePreferences(prefs);
-  }
-
-  // Load and update config
-  const config = await loadMcpConfig(configPath);
-  const added: string[] = [];
-
-  if (!config.mcpServers) {
-    config.mcpServers = {};
-  }
-
+  // Prompt for env vars ONCE per server (shared across all agents)
+  const resolvedEnvs = new Map<string, Record<string, string>>();
   for (const server of servers) {
-    // Skip if already configured
-    if (config.mcpServers[server.name]) {
-      console.log(chalk.gray(`   ⏭ ${server.name} (already configured)`));
-      continue;
+    if (server.env && Object.keys(server.env).length > 0) {
+      console.log(chalk.yellow(`   ${server.name} requires configuration:`));
+      const envVars = await promptForEnvVars(server.name, server.env);
+      resolvedEnvs.set(server.name, envVars);
+    } else {
+      resolvedEnvs.set(server.name, {});
+    }
+  }
+
+  const results: Record<string, string[]> = {};
+
+  for (const agent of AGENT_MCP_CONFIGS) {
+    // Check if agent CLI is installed
+    if (!cliExists(agent.cli)) {
+      continue; // Skip agents that aren't installed
     }
 
-    // Prompt for required env variables
-    let envVars: Record<string, string> = {};
-    if (server.env) {
-      console.log(chalk.yellow(`   ${server.name} requires configuration:`));
+    const { added, skipped } = await addServersToAgent(agent, servers, resolvedEnvs);
+    if (added.length > 0) {
+      results[agent.name] = added;
+      console.log(chalk.green(`   ✓ ${agent.name}: ${added.join(', ')}`));
+      console.log(chalk.gray(`     → ${agent.path}`));
+    }
+    if (skipped.length > 0) {
+      console.log(chalk.gray(`   ⏭ ${agent.name}: ${skipped.join(', ')} (already configured)`));
+    }
+  }
 
-      for (const [key, defaultValue] of Object.entries(server.env)) {
-        const isPlaceholder = defaultValue.startsWith('${') || defaultValue === '';
-        const promptText = isPlaceholder
-          ? `     ${key}: `
-          : `     ${key} [${defaultValue}]: `;
+  return results;
+}
 
-        const value = await prompt(promptText, { color: 'cyan' });
-        envVars[key] = value || defaultValue;
+/**
+ * List currently configured MCP servers from all agent configs.
+ */
+export async function listMcpServers(): Promise<Record<string, Record<string, unknown>>> {
+  const results: Record<string, Record<string, unknown>> = {};
+
+  for (const agent of AGENT_MCP_CONFIGS) {
+    if (await fileExists(agent.path)) {
+      if (agent.format === 'json') {
+        const config = await loadJsonConfig(agent.path);
+        const servers = config[agent.key] as Record<string, unknown>;
+        if (servers && Object.keys(servers).length > 0) {
+          results[agent.name] = servers;
+        }
+      } else if (agent.format === 'toml') {
+        const { servers } = await loadTomlConfig(agent.path);
+        if (Object.keys(servers).length > 0) {
+          results[agent.name] = servers;
+        }
       }
     }
-
-    config.mcpServers[server.name] = {
-      command: server.command,
-      args: server.args,
-      ...(Object.keys(envVars).length > 0 && { env: envVars })
-    };
-
-    added.push(server.name);
-    console.log(chalk.green(`   ✓ ${server.name} → ${server.package}`));
   }
 
-  if (added.length > 0) {
-    await saveMcpConfig(configPath, config);
-    console.log(chalk.gray(`   Saved to: ${configPath}`));
-  }
-
-  return added;
+  return results;
 }
 
 /**
- * List currently configured MCP servers from default config.
- * 
- * @returns Record of server names to their configs
+ * Remove an MCP server from all agent configs.
+ * Returns array of { agent, path } for removed entries.
  */
-export async function listMcpServers(): Promise<Record<string, { command: string; args: string[] }>> {
-  const prefs = await loadPreferences();
-  if (!prefs.mcpConfigPath) return {};
+export async function removeMcpServer(name: string): Promise<Array<{ agent: string; path: string }>> {
+  const removed: Array<{ agent: string; path: string }> = [];
 
-  const config = await loadMcpConfig(prefs.mcpConfigPath);
-  return config.mcpServers || {};
-}
+  for (const agent of AGENT_MCP_CONFIGS) {
+    if (!(await fileExists(agent.path))) continue;
 
-/**
- * Remove an MCP server from default config.
- * 
- * @param name - Server name to remove
- * @returns True if removed, false if not found
- */
-export async function removeMcpServer(name: string): Promise<boolean> {
-  const prefs = await loadPreferences();
-  if (!prefs.mcpConfigPath) return false;
+    if (agent.format === 'json') {
+      const config = await loadJsonConfig(agent.path);
+      const servers = config[agent.key] as Record<string, unknown>;
 
-  const config = await loadMcpConfig(prefs.mcpConfigPath);
-
-  if (!config.mcpServers || !config.mcpServers[name]) {
-    return false;
+      if (servers && servers[name]) {
+        delete servers[name];
+        await saveJsonConfig(agent.path, config);
+        removed.push({ agent: agent.name, path: agent.path });
+      }
+    }
+    // TOML removal is more complex, skip for now
   }
 
-  delete config.mcpServers[name];
-  await saveMcpConfig(prefs.mcpConfigPath, config);
-  return true;
+  return removed;
 }
+

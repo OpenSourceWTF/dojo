@@ -22,11 +22,11 @@ export function parseSource(source: string): SourceInfo {
     return { type: 'file', path: source.substring(5) };
   }
 
-  const match = source.match(/^github:([^/]+)\/([^/]+)\/(.+)$/);
+  const match = source.match(/^github:([^/]+)\/([^/]+)(?:\/(.+))?$/);
   if (!match) {
-    throw new Error(`Invalid source format: ${source}. Expected github:owner/repo/path or file:/path`);
+    throw new Error(`Invalid source format: ${source}. Expected github:owner/repo/path or github:owner/repo`);
   }
-  return { type: 'github', owner: match[1], repo: match[2], path: match[3] };
+  return { type: 'github', owner: match[1], repo: match[2], path: match[3] || '' };
 }
 
 async function fetchWithRetry(url: string, retries = 3): Promise<Response> {
@@ -63,11 +63,15 @@ export async function downloadSkill(options: DownloadOptions): Promise<void> {
   const { owner, repo, path: srcPath } = parsed;
   const version = options.version || 'main';
 
-  // Strategy 1: Try as single file (Raw API)
-  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${version}/${srcPath}`;
+  // Use jsDelivr CDN instead of raw.githubusercontent.com
+  // Format: https://cdn.jsdelivr.net/gh/{owner}/{repo}@{version}/{path}
+  const cdnBase = `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${version}`;
+
+  // Strategy 1: Try as single file 
+  const fileUrl = srcPath ? `${cdnBase}/${srcPath}` : cdnBase;
 
   try {
-    const res = await fetchWithRetry(rawUrl);
+    const res = await fetchWithRetry(fileUrl);
     if (res.ok) {
       const content = await res.text();
       // Ensure parent dir exists
@@ -80,8 +84,7 @@ export async function downloadSkill(options: DownloadOptions): Promise<void> {
   }
 
   // Strategy 2: Try as directory containing SKILL.md
-  // First try to fetch SKILL.md directly from the directory
-  const skillMdUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${version}/${srcPath}/SKILL.md`;
+  const skillMdUrl = srcPath ? `${cdnBase}/${srcPath}/SKILL.md` : `${cdnBase}/SKILL.md`;
 
   try {
     const skillRes = await fetchWithRetry(skillMdUrl);
@@ -96,6 +99,7 @@ export async function downloadSkill(options: DownloadOptions): Promise<void> {
   }
 
   // Strategy 3: Use GitHub API to find a markdown file in the directory
+  // (API fallback still uses GitHub API, but downloads via CDN)
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${srcPath}?ref=${version}`;
   const apiRes = await fetchWithRetry(apiUrl);
 
@@ -107,8 +111,12 @@ export async function downloadSkill(options: DownloadOptions): Promise<void> {
         item.type === 'file' && (item.name === 'SKILL.md' || item.name.toLowerCase().endsWith('.md'))
       );
 
-      if (skillFile && skillFile.download_url) {
-        const itemRes = await fetchWithRetry(skillFile.download_url);
+      if (skillFile) {
+        // Download via CDN instead of download_url (which uses raw.githubusercontent)
+        const cdnDownloadUrl = srcPath
+          ? `${cdnBase}/${srcPath}/${skillFile.name}`
+          : `${cdnBase}/${skillFile.name}`;
+        const itemRes = await fetchWithRetry(cdnDownloadUrl);
         if (itemRes.ok) {
           const content = await itemRes.text();
           await mkdir(dirname(options.destPath), { recursive: true });
@@ -119,5 +127,5 @@ export async function downloadSkill(options: DownloadOptions): Promise<void> {
     }
   }
 
-  throw new Error(`Failed to download resource from ${rawUrl} or list directory via API.`);
+  throw new Error(`Failed to download resource from ${fileUrl} or list directory via API.`);
 }

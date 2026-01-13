@@ -47,7 +47,7 @@ describe('claudeToGemini', () => {
     await writeFile(destFile, 'old content');
 
     const result = claudeToGemini(sourceFile, destFile, { force: false });
-    
+
     expect(result).toBe(false);
     const content = await readFile(destFile, 'utf-8');
     expect(content).toBe('old content');
@@ -60,7 +60,7 @@ describe('claudeToGemini', () => {
     await writeFile(destFile, 'old content');
 
     const result = claudeToGemini(sourceFile, destFile, { force: true });
-    
+
     expect(result).toBe(true);
     const content = await readFile(destFile, 'utf-8');
     expect(content).toBe('new content');
@@ -80,19 +80,21 @@ describe('syncClaudeToGemini', () => {
   });
 
   it('should sync all Claude skills to Gemini', async () => {
-    // Create Claude skills directory
-    const claudeDir = join(testDir, '.claude', 'skills');
-    await mkdir(claudeDir, { recursive: true });
-    await writeFile(join(claudeDir, 'skill1.md'), '# Skill 1');
-    await writeFile(join(claudeDir, 'skill2.md'), '# Skill 2');
+    // Create Claude skills in folder-skill format
+    const skill1Dir = join(testDir, '.claude', 'skills', 'skill1');
+    const skill2Dir = join(testDir, '.claude', 'skills', 'skill2');
+    await mkdir(skill1Dir, { recursive: true });
+    await mkdir(skill2Dir, { recursive: true });
+    await writeFile(join(skill1Dir, 'SKILL.md'), '# Skill 1');
+    await writeFile(join(skill2Dir, 'SKILL.md'), '# Skill 2');
 
     const result = syncClaudeToGemini(testDir);
 
     expect(result.synced).toHaveLength(2);
-    expect(result.synced).toContain('skill1.md');
-    expect(result.synced).toContain('skill2.md');
+    expect(result.synced).toContain('skill1');
+    expect(result.synced).toContain('skill2');
 
-    // Verify files were created
+    // Verify files were created (flat-md output)
     const geminiDir = join(testDir, '.agent', 'workflows');
     const skill1 = await readFile(join(geminiDir, 'skill1.md'), 'utf-8');
     const skill2 = await readFile(join(geminiDir, 'skill2.md'), 'utf-8');
@@ -107,34 +109,36 @@ describe('syncClaudeToGemini', () => {
     expect(result.skipped).toHaveLength(0);
   });
 
-  it('should skip non-md files', async () => {
+  it('should skip directories without SKILL.md', async () => {
     const claudeDir = join(testDir, '.claude', 'skills');
-    await mkdir(claudeDir, { recursive: true });
-    await writeFile(join(claudeDir, 'skill.md'), '# Skill');
-    await writeFile(join(claudeDir, 'config.json'), '{}');
-    await writeFile(join(claudeDir, 'notes.txt'), 'notes');
+    const skillDir = join(claudeDir, 'skill');
+    const emptyDir = join(claudeDir, 'empty-dir');
+    await mkdir(skillDir, { recursive: true });
+    await mkdir(emptyDir, { recursive: true });
+    await writeFile(join(skillDir, 'SKILL.md'), '# Skill');
+    await writeFile(join(emptyDir, 'notes.txt'), 'just notes');
 
     const result = syncClaudeToGemini(testDir);
 
     expect(result.synced).toHaveLength(1);
-    expect(result.synced).toContain('skill.md');
-    expect(result.skipped).toHaveLength(2);
+    expect(result.synced).toContain('skill');
+    expect(result.skipped).toContain('empty-dir');
   });
 
   it('should skip existing files in batch sync when force is false', async () => {
-    const claudeDir = join(testDir, '.claude', 'skills');
+    const skill1Dir = join(testDir, '.claude', 'skills', 'skill1');
     const geminiDir = join(testDir, '.agent', 'workflows');
-    await mkdir(claudeDir, { recursive: true });
+    await mkdir(skill1Dir, { recursive: true });
     await mkdir(geminiDir, { recursive: true });
 
-    await writeFile(join(claudeDir, 'skill1.md'), 'new content 1');
+    await writeFile(join(skill1Dir, 'SKILL.md'), 'new content 1');
     await writeFile(join(geminiDir, 'skill1.md'), 'old content 1'); // Exists
 
     const result = syncClaudeToGemini(testDir, { force: false });
 
-    expect(result.synced).not.toContain('skill1.md');
-    expect(result.skipped).toContain('skill1.md');
-    
+    expect(result.synced).not.toContain('skill1');
+    expect(result.skipped).toContain('skill1');
+
     const content = await readFile(join(geminiDir, 'skill1.md'), 'utf-8');
     expect(content).toBe('old content 1');
   });

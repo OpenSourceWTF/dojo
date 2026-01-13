@@ -58,6 +58,13 @@ export async function search(term: string, options: SearchOptions = {}) {
     if (skill.tags?.some(t => t.toLowerCase().includes(lowerTerm))) score += 2;
     if (skill.aliases?.some(a => a.toLowerCase().includes(lowerTerm))) score += 6;
 
+    // Search in source (URL/path)
+    if (skill.source.toLowerCase().includes(lowerTerm)) score += 3;
+
+    // Search in extracted org
+    const org = extractOrg(fqn, skill.source);
+    if (org && org.toLowerCase().includes(lowerTerm)) score += 5;
+
     if (score > 0) {
       results.push({ fqn, skill, score });
     }

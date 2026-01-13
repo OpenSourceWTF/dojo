@@ -12,7 +12,7 @@ describe('sync command', () => {
   beforeEach(async () => {
     await mkdir(tmpRoot, { recursive: true });
     vi.spyOn(process, 'cwd').mockReturnValue(tmpRoot);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => { });
     mockExit = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called');
     });
@@ -29,18 +29,20 @@ describe('sync command', () => {
   });
 
   it('should sync skills from Claude to Gemini', async () => {
-    // Setup Claude skills
-    const claudeDir = join(tmpRoot, '.claude', 'skills');
+    // Setup Claude skills (folder-skill format)
+    const skill1Dir = join(tmpRoot, '.claude', 'skills', 'test-skill');
+    const skill2Dir = join(tmpRoot, '.claude', 'skills', 'another-skill');
     const geminiDir = join(tmpRoot, '.agent', 'workflows');
-    await mkdir(claudeDir, { recursive: true });
+    await mkdir(skill1Dir, { recursive: true });
+    await mkdir(skill2Dir, { recursive: true });
     await mkdir(geminiDir, { recursive: true });
 
-    await writeFile(join(claudeDir, 'test-skill.md'), '# Test Skill\n\nThis is a test skill.');
-    await writeFile(join(claudeDir, 'another-skill.md'), '# Another Skill\n\nAnother skill content.');
+    await writeFile(join(skill1Dir, 'SKILL.md'), '# Test Skill\n\nThis is a test skill.');
+    await writeFile(join(skill2Dir, 'SKILL.md'), '# Another Skill\n\nAnother skill content.');
 
     await sync();
 
-    // Verify synced to Gemini
+    // Verify synced to Gemini (flat-md output)
     expect(existsSync(join(geminiDir, 'test-skill.md'))).toBe(true);
     expect(existsSync(join(geminiDir, 'another-skill.md'))).toBe(true);
 
@@ -50,13 +52,13 @@ describe('sync command', () => {
   });
 
   it('should sync skills from Claude to Cursor', async () => {
-    // Setup Claude skills and Cursor directory
-    const claudeDir = join(tmpRoot, '.claude', 'skills');
+    // Setup Claude skills and Cursor directory (folder-skill format)
+    const skillDir = join(tmpRoot, '.claude', 'skills', 'my-skill');
     const cursorDir = join(tmpRoot, '.cursor', 'rules');
-    await mkdir(claudeDir, { recursive: true });
+    await mkdir(skillDir, { recursive: true });
     await mkdir(cursorDir, { recursive: true });
 
-    await writeFile(join(claudeDir, 'my-skill.md'), '# My Skill\n\nSkill content here.');
+    await writeFile(join(skillDir, 'SKILL.md'), '# My Skill\n\nSkill content here.');
 
     await sync();
 
@@ -71,15 +73,15 @@ describe('sync command', () => {
   });
 
   it('should sync to multiple agent directories', async () => {
-    // Setup all directories
-    const claudeDir = join(tmpRoot, '.claude', 'skills');
+    // Setup all directories (folder-skill format)
+    const skillDir = join(tmpRoot, '.claude', 'skills', 'multi-skill');
     const geminiDir = join(tmpRoot, '.agent', 'workflows');
     const cursorDir = join(tmpRoot, '.cursor', 'rules');
-    await mkdir(claudeDir, { recursive: true });
+    await mkdir(skillDir, { recursive: true });
     await mkdir(geminiDir, { recursive: true });
     await mkdir(cursorDir, { recursive: true });
 
-    await writeFile(join(claudeDir, 'multi-skill.md'), '# Multi Skill\n\nContent.');
+    await writeFile(join(skillDir, 'SKILL.md'), '# Multi Skill\n\nContent.');
 
     await sync();
 
@@ -89,15 +91,19 @@ describe('sync command', () => {
   });
 
   it('should report correct sync counts', async () => {
-    const claudeDir = join(tmpRoot, '.claude', 'skills');
     const geminiDir = join(tmpRoot, '.agent', 'workflows');
-    await mkdir(claudeDir, { recursive: true });
     await mkdir(geminiDir, { recursive: true });
 
-    // Add multiple skills
-    await writeFile(join(claudeDir, 'skill1.md'), '# Skill 1');
-    await writeFile(join(claudeDir, 'skill2.md'), '# Skill 2');
-    await writeFile(join(claudeDir, 'skill3.md'), '# Skill 3');
+    // Add multiple skills (folder-skill format)
+    const skill1Dir = join(tmpRoot, '.claude', 'skills', 'skill1');
+    const skill2Dir = join(tmpRoot, '.claude', 'skills', 'skill2');
+    const skill3Dir = join(tmpRoot, '.claude', 'skills', 'skill3');
+    await mkdir(skill1Dir, { recursive: true });
+    await mkdir(skill2Dir, { recursive: true });
+    await mkdir(skill3Dir, { recursive: true });
+    await writeFile(join(skill1Dir, 'SKILL.md'), '# Skill 1');
+    await writeFile(join(skill2Dir, 'SKILL.md'), '# Skill 2');
+    await writeFile(join(skill3Dir, 'SKILL.md'), '# Skill 3');
 
     await sync();
 
@@ -106,33 +112,35 @@ describe('sync command', () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Sync complete'));
   });
 
-  it('should skip non-md files', async () => {
-    const claudeDir = join(tmpRoot, '.claude', 'skills');
+  it('should skip directories without SKILL.md', async () => {
+    const skillDir = join(tmpRoot, '.claude', 'skills', 'valid-skill');
+    const emptyDir = join(tmpRoot, '.claude', 'skills', 'empty-folder');
     const geminiDir = join(tmpRoot, '.agent', 'workflows');
-    await mkdir(claudeDir, { recursive: true });
+    await mkdir(skillDir, { recursive: true });
+    await mkdir(emptyDir, { recursive: true });
     await mkdir(geminiDir, { recursive: true });
 
-    await writeFile(join(claudeDir, 'valid-skill.md'), '# Valid');
-    await writeFile(join(claudeDir, 'readme.txt'), 'This is not a skill');
+    await writeFile(join(skillDir, 'SKILL.md'), '# Valid');
+    await writeFile(join(emptyDir, 'readme.txt'), 'This is not a skill');
 
     await sync();
 
-    // Verify only .md was synced
+    // Verify only valid skill was synced
     const geminiFiles = await readdir(geminiDir);
     expect(geminiFiles).toContain('valid-skill.md');
-    expect(geminiFiles).not.toContain('readme.txt');
+    expect(geminiFiles).not.toContain('empty-folder.md');
   });
 
   it('should skip existing files by default', async () => {
-    const claudeDir = join(tmpRoot, '.claude', 'skills');
+    const skillDir = join(tmpRoot, '.claude', 'skills', 'existing');
     const geminiDir = join(tmpRoot, '.agent', 'workflows');
-    await mkdir(claudeDir, { recursive: true });
+    await mkdir(skillDir, { recursive: true });
     await mkdir(geminiDir, { recursive: true });
 
     // Pre-existing file in Gemini (old)
     await writeFile(join(geminiDir, 'existing.md'), '# Old Content');
     // New content in Claude (source)
-    await writeFile(join(claudeDir, 'existing.md'), '# New Content');
+    await writeFile(join(skillDir, 'SKILL.md'), '# New Content');
 
     await sync();
 
@@ -142,15 +150,15 @@ describe('sync command', () => {
   });
 
   it('should overwrite existing files with force option', async () => {
-    const claudeDir = join(tmpRoot, '.claude', 'skills');
+    const skillDir = join(tmpRoot, '.claude', 'skills', 'existing');
     const geminiDir = join(tmpRoot, '.agent', 'workflows');
-    await mkdir(claudeDir, { recursive: true });
+    await mkdir(skillDir, { recursive: true });
     await mkdir(geminiDir, { recursive: true });
 
     // Pre-existing file in Gemini (old)
     await writeFile(join(geminiDir, 'existing.md'), '# Old Content');
     // New content in Claude (source)
-    await writeFile(join(claudeDir, 'existing.md'), '# New Content');
+    await writeFile(join(skillDir, 'SKILL.md'), '# New Content');
 
     await sync({ force: true });
 

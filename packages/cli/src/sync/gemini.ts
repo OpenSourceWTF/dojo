@@ -4,8 +4,8 @@
  * See LICENSE file for details.
  */
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 
 export interface SyncOptions {
   force?: boolean;
@@ -38,8 +38,8 @@ export function claudeToGemini(sourcePath: string, destPath: string, options: Sy
 
 /**
  * Batch sync all Claude skills to Gemini format.
- * - Source: .claude/skills/*.md
- * - Dest: .agent/workflows/*.md
+ * - Source: .claude/skills/{skill}/SKILL.md (folder-skill format)
+ * - Dest: .agent/workflows/{skill}.md (flat-md format)
  */
 export function syncClaudeToGemini(
   projectRoot: string,
@@ -56,24 +56,33 @@ export function syncClaudeToGemini(
     return { synced, skipped };
   }
 
-  // Get all files in Claude skills directory
-  const files = readdirSync(claudeDir);
+  // Get all skill directories in Claude skills directory
+  const entries = readdirSync(claudeDir);
 
-  for (const file of files) {
-    // Only sync .md files
-    if (!file.endsWith('.md')) {
-      skipped.push(file);
+  for (const entry of entries) {
+    const entryPath = join(claudeDir, entry);
+
+    // Skip if not a directory
+    if (!statSync(entryPath).isDirectory()) {
+      skipped.push(entry);
       continue;
     }
 
-    const sourcePath = join(claudeDir, file);
-    const destPath = join(geminiDir, file);
+    // Check for SKILL.md inside the directory
+    const skillFilePath = join(entryPath, 'SKILL.md');
+    if (!existsSync(skillFilePath)) {
+      skipped.push(entry);
+      continue;
+    }
 
-    const wasSynced = claudeToGemini(sourcePath, destPath, options);
+    // Sync the skill (output as flat .md file)
+    const destPath = join(geminiDir, `${entry}.md`);
+    const wasSynced = claudeToGemini(skillFilePath, destPath, options);
+
     if (wasSynced) {
-      synced.push(file);
+      synced.push(entry);
     } else {
-      skipped.push(file);
+      skipped.push(entry);
     }
   }
 

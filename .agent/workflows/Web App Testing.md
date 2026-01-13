@@ -1,1 +1,0 @@
-../../../../.dojo/skills/Web App Testing.md

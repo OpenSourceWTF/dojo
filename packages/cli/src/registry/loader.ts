@@ -232,24 +232,49 @@ export interface LoadRegistryOptions {
 export async function loadRegistry(localPath?: string, options: LoadRegistryOptions = {}): Promise<Registry> {
   // If localOnly mode (for tests), skip remote entirely
   if (options.localOnly && localPath) {
-    const official = await loadLocalRegistryDir(join(localPath, 'official'));
-    const community = await loadLocalRegistryDir(join(localPath, 'community'));
-    const user = await loadLocalRegistryDir(join(localPath, 'user'));
-    return mergeRegistries(official, community, user);
+    const entries = await readdir(localPath, { withFileTypes: true });
+    const registries: Registry[] = [];
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        registries.push(await loadLocalRegistryDir(join(localPath, entry.name)));
+      }
+    }
+    return mergeRegistries(...registries);
   }
 
   // Fetch registry index first
   const index = await fetchRegistryIndex();
 
   if (index && index.categories) {
-    const officialFiles = index.categories.official || [];
-    const communityFiles = index.categories.community || [];
+    const registries: Registry[] = [];
 
-    const official = await loadRemoteRegistryDir('official', officialFiles);
-    const community = await loadRemoteRegistryDir('community', communityFiles);
+    // Sort categories to ensure deterministic order (though mergeRegistries precedence is array order)
+    // We typically want official > community > others. 
+    // Let's rely on mergeRegistries handling array order (last wins? No, first arg wins).
+    // mergeRegistries iterates backwards: priority is arg[0] > arg[1] ...
 
-    // Merge remote registries (official > community)
-    const remote = mergeRegistries(official, community);
+    // We want explicit priority: official, community, then others alphabetically?
+    const keys = Object.keys(index.categories);
+    const priority = ['official', 'community'];
+
+    // Sort keys so priority ones come first
+    keys.sort((a, b) => {
+      const idxA = priority.indexOf(a);
+      const idxB = priority.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    for (const category of keys) {
+      const files = index.categories[category] || [];
+      registries.push(await loadRemoteRegistryDir(category, files));
+    }
+
+    // Merge remote registries
+    const remote = mergeRegistries(...registries);
 
     // If we got skills from remote, use them
     if (remote.skills.size > 0) {
@@ -264,10 +289,15 @@ export async function loadRegistry(localPath?: string, options: LoadRegistryOpti
 
   // Fallback to local registry
   if (localPath) {
-    const official = await loadLocalRegistryDir(join(localPath, 'official'));
-    const community = await loadLocalRegistryDir(join(localPath, 'community'));
-    const user = await loadLocalRegistryDir(join(localPath, 'user'));
-    return mergeRegistries(official, community, user);
+    const entries = await readdir(localPath, { withFileTypes: true });
+    const registries: Registry[] = [];
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        registries.push(await loadLocalRegistryDir(join(localPath, entry.name)));
+      }
+    }
+    return mergeRegistries(...registries);
   }
 
   return { skills: new Map() };
