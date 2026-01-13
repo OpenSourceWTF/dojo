@@ -176,4 +176,32 @@ describe('unlearn command', () => {
       expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No symlinks'));
     });
   });
+
+  describe('variadic support', () => {
+    it('should allow calling unlearn multiple times for different skills', async () => {
+      // Create canonical skill files
+      const dojoSkillsDir = join(tmpRoot, '.dojo', 'skills');
+      await mkdir(dojoSkillsDir, { recursive: true });
+      await writeFile(join(dojoSkillsDir, 'skill-one.md'), '# Skill One');
+      await writeFile(join(dojoSkillsDir, 'skill-two.md'), '# Skill Two');
+
+      // Create agent skill directories with symlinks
+      const claudeDir = join(tmpRoot, '.claude', 'skills');
+      await mkdir(claudeDir, { recursive: true });
+      const skill1Dir = join(claudeDir, 'skill-one');
+      const skill2Dir = join(claudeDir, 'skill-two');
+      await mkdir(skill1Dir, { recursive: true });
+      await mkdir(skill2Dir, { recursive: true });
+      await symlink(join(dojoSkillsDir, 'skill-one.md'), join(skill1Dir, 'SKILL.md'));
+      await symlink(join(dojoSkillsDir, 'skill-two.md'), join(skill2Dir, 'SKILL.md'));
+
+      // Unlearn both
+      await unlearn('skill-one', {}, tmpRoot);
+      await unlearn('skill-two', {}, tmpRoot);
+
+      // Both symlinks should be gone
+      expect(existsSync(join(skill1Dir, 'SKILL.md'))).toBe(false);
+      expect(existsSync(join(skill2Dir, 'SKILL.md'))).toBe(false);
+    });
+  });
 });

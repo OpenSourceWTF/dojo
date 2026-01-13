@@ -20,7 +20,7 @@ graph TD
 
 ## Packages
 
-### `@opensourcewtf/dojo-cli`
+### `@opensourcewtf/dojo`
 Core CLI handling all skill operations.
 
 **Modules:**
@@ -28,7 +28,8 @@ Core CLI handling all skill operations.
 - `registry/` - Registry loading and search
 - `resolver/` - Dependency resolution with cycle detection
 - `download/` - GitHub raw API downloader
-- `agents/` - Agent directory detection
+- `agents/` - Plugin-based agent detection and skill format handling
+- `mcp/` - MCP server configuration management
 - `sync/` - Format transformers (Claude → Gemini, Claude → Cursor)
 
 ### `@opensourcewtf/dojo-mcp`
@@ -37,7 +38,7 @@ MCP server for natural language skill discovery.
 **Components:**
 - `dojo_learn` tool - Exposed to AI agents
 - Hono server - HTTP transport
-- CLI integration - Delegates to `@opensourcewtf/dojo-cli`
+- CLI integration - Delegates to `@opensourcewtf/dojo`
 
 ## Data Flow
 
@@ -48,21 +49,23 @@ sequenceDiagram
     participant CLI
     participant Registry
     participant GitHub
-    participant Agents
+    participant Plugins
 
-    User->>CLI: dojo learn skill
-    CLI->>Registry: searchRegistry(skill)
-    Registry-->>CLI: matches[]
-    CLI->>Registry: resolveSkill(fqn)
-    Registry-->>CLI: dependencies[]
-    loop Each dependency
-        CLI->>GitHub: downloadSkill(source)
-        GitHub-->>CLI: content
-    end
-    CLI->>Agents: detectAgents()
-    Agents-->>CLI: [claude, gemini, cursor]
-    loop Each agent
-        CLI->>Agents: writeSkillToAgent(content)
+    User->>CLI: dojo learn skill1 skill2
+    loop Each skill
+        CLI->>Registry: searchRegistry(skill)
+        Registry-->>CLI: matches[]
+        CLI->>Registry: resolveSkill(fqn)
+        Registry-->>CLI: dependencies[]
+        loop Each dependency
+            CLI->>GitHub: downloadSkill(source)
+            GitHub-->>CLI: content
+        end
+        CLI->>Plugins: detectAgents()
+        Plugins-->>CLI: [claude, gemini, cursor]
+        loop Each agent plugin
+            CLI->>Plugins: installSkill(content)
+        end
     end
     CLI-->>User: ✅ Installed
 ```
@@ -72,7 +75,7 @@ sequenceDiagram
 dojo-skills/registry/
 ├── official/           # Vendor skills (anthropic.json, google.json)
 ├── community/          # Community contributions
-└── user/               # Local custom skills (gitignored)
+└── mcp/                # MCP server configurations
 ```
 
 Each registry file contains:
@@ -83,44 +86,54 @@ Each registry file contains:
     "skill-name": {
       "name": "Display Name",
       "path": "skill-path",
-      "source": "github:org/repo",
+      "source": "github:org/repo/path.md",
       "dependencies": ["@org/other-skill"],
-      "versions": { "latest": "commit-hash" }
+      "mcp_servers": [{ "name": "server", "package": "@org/pkg" }]
     }
   }
 }
 ```
 
-## Agent Format Transformers
+## Plugin Architecture
 
-| Source | Target | Transform |
-|--------|--------|-----------|
-| Claude | Gemini | 1:1 copy (both use flat .md) |
-| Claude | Cursor | Wrap in folder + add YAML frontmatter |
+### Agent Plugins (`agents/plugins/`)
+Each agent has a plugin that defines:
+- `name` - Agent identifier
+- `cli` - CLI command to detect (e.g., `claude`, `gemini`)
+- `agentDir` - Skill directory (e.g., `.claude/skills`)
+- `mcpConfig` - MCP configuration file location and format
+- `formatPlugin` - Skill file format handler
 
-### Cursor Transform Example
-```markdown
-# Input (Claude)
-# Testing Guide
-Instructions for testing...
+### Format Plugins (`agents/formats/`)
+Define how skills are stored:
+- `folder-skill` - `{skill}/SKILL.md` pattern (Claude, Gemini, Codex)
+- `folder-rule` - `{skill}/RULE.md` pattern (Cursor)
+- `flat-md` - `{skill}.md` flat file pattern (Antigravity)
 
-# Output (Cursor)
----
-name: testing-guide
-alwaysApply: false
-description: Testing Guide
----
+## CLI Modes
 
-# Testing Guide
-Instructions for testing...
+### Modal `--mcp` Flag
+
+| Command | Default | With `--mcp` |
+|---------|---------|-------------|
+| `learn` | Install skill files | Install MCP config only |
+| `unlearn` | Remove skill files + MCP | Remove MCP config only |
+| `search` | Show skills only | Show MCP servers only |
+| `list` | Show installed skills | Show configured MCPs |
+
+### Variadic Commands
+Both `learn` and `unlearn` accept multiple packages:
+```bash
+dojo learn skill1 skill2 skill3
+dojo unlearn pkg1 pkg2 --mcp
 ```
 
 ## Extension Points
 
 ### Adding New Agent Formats
-1. Add detection logic in `agents/detector.ts`
-2. Create transformer in `sync/{agent}.ts`
-3. Update `writeSkillToAgent()` in `commands/learn.ts`
+1. Create plugin in `agents/plugins/{agent}.ts`
+2. Define format plugin or reuse existing from `agents/formats/`
+3. Register in `agents/plugins/index.ts`
 
 ### Adding Registry Sources
 1. Create JSON file in `registry/community/`
@@ -131,7 +144,7 @@ Instructions for testing...
 
 ```mermaid
 graph LR
-    MCP[dojo-mcp] --> CLI[dojo-cli]
+    MCP[dojo-mcp] --> CLI[dojo]
     CLI --> chalk
     CLI --> commander
     MCP --> @modelcontextprotocol/sdk
