@@ -9,6 +9,7 @@ import { searchRegistry, loadRegistry, SkillEntry } from '../registry/index.js';
 import { resolveSkill, detectCycle } from '../resolver/dependencies.js';
 import { downloadSkill } from '../download/github.js';
 import { detectAgents, DetectedAgent } from '../agents/detector.js';
+import { addMcpServersToConfig } from '../mcp/config.js';
 import { join, relative, dirname } from 'node:path';
 import { mkdir, writeFile, readFile, symlink, unlink, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -275,6 +276,7 @@ export async function learn(skill: string, options: LearnOptions = {}) {
 
   // 9. Download and install each skill
   const installedPaths: string[] = [];
+  const allMcpServers: import('../registry/loader.js').McpServerConfig[] = [];
 
   for (const r of resolved) {
     const entry = r.entry;
@@ -316,12 +318,24 @@ export async function learn(skill: string, options: LearnOptions = {}) {
       const destPath = await symlinkSkillToAgent(agent, skillName, canonicalPath, projectRoot);
       installedPaths.push(destPath.replace(projectRoot + '/', ''));
     }
+
+    // Collect MCP servers for setup
+    if (entry.mcp_servers && entry.mcp_servers.length > 0) {
+      allMcpServers.push(...entry.mcp_servers);
+    }
   }
 
-  // 10. Display success
+  // 10. Setup MCP servers if any
+  if (allMcpServers.length > 0) {
+    console.log(chalk.blue('\n🔌 Setting up MCP servers:'));
+    await addMcpServersToConfig(allMcpServers);
+  }
+
+  // 11. Display success
   console.log(chalk.green('\n✅ Installed to:'));
   console.log(chalk.gray(`   📁 ${DOJO_SKILLS_DIR} (canonical)`));
   for (const p of installedPaths) {
     console.log(chalk.gray(`   ↪ ${p}`));
   }
 }
+

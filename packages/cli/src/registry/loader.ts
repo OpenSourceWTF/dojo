@@ -17,6 +17,14 @@ const REGISTRY_BASE_URL = `https://cdn.jsdelivr.net/gh/${REGISTRY_REPO}@${REGIST
 const CACHE_DIR = join(homedir(), '.dojo', 'cache');
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+export interface McpServerConfig {
+  name: string;
+  package: string;  // npm package name
+  command: string;  // e.g., "npx" or "node"
+  args: string[];   // command args
+  env?: Record<string, string>;
+}
+
 export interface SkillEntry {
   name: string;
   path: string;
@@ -26,6 +34,7 @@ export interface SkillEntry {
   tags?: string[];
   dependencies?: string[];
   versions?: Record<string, string>;
+  mcp_servers?: McpServerConfig[];
 }
 
 export interface Registry {
