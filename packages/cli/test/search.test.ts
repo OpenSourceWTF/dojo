@@ -9,13 +9,11 @@ describe('Search Command', () => {
 
   beforeEach(async () => {
     await mkdir(tmpRoot, { recursive: true });
-    // Spy on process.cwd to point to tmpRoot
-    vi.spyOn(process, 'cwd').mockReturnValue(tmpRoot);
     // Spy on console.log
     vi.spyOn(console, 'log').mockImplementation(() => { });
 
     // Setup registry
-    const officialDir = join(tmpRoot, 'registry', 'official');
+    const officialDir = join(tmpRoot, 'official');
     await mkdir(officialDir, { recursive: true });
     await writeFile(
       join(officialDir, 'a.json'),
@@ -40,23 +38,23 @@ describe('Search Command', () => {
   });
 
   it('should find skills by name', async () => {
-    await search('docx');
+    await search('docx', { registry: tmpRoot });
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('@official/docx'));
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Edit Word documents'));
   });
 
   it('should find skills by tags', async () => {
-    await search('productivity');
+    await search('productivity', { registry: tmpRoot });
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('@official/docx'));
   });
 
   it('should find skills by alias', async () => {
-    await search('word');
+    await search('word', { registry: tmpRoot });
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('@official/docx'));
   });
 
   it('should handle no matches', async () => {
-    await search('banana');
+    await search('banana', { registry: tmpRoot });
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Found 0 skills'));
   });
 });

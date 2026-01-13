@@ -6,13 +6,19 @@
 
 import chalk from 'chalk';
 import { loadRegistry, SkillEntry } from '../registry/loader.js';
-import { join } from 'node:path';
 
-export async function search(term: string) {
-  // TODO: better configuration for registry path
-  // For now, assume a 'registry' folder in the current working directory
-  const registryPath = join(process.cwd(), 'registry');
-  const registry = await loadRegistry(registryPath);
+interface SearchOptions {
+  registry?: string;  // Local path or github:owner/repo URL
+}
+
+export async function search(term: string, options: SearchOptions = {}) {
+  // Parse registry option - local path uses localOnly mode
+  const isLocalRegistry = Boolean(options.registry && !options.registry.startsWith('github:') && !options.registry.startsWith('https://'));
+
+  const registry = await loadRegistry(
+    isLocalRegistry ? options.registry : undefined,
+    { localOnly: isLocalRegistry }
+  );
 
   const results: { fqn: string, skill: SkillEntry, score: number }[] = [];
 

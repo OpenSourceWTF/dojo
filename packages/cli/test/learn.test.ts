@@ -74,7 +74,7 @@ describe('learn command', () => {
       text: () => Promise.resolve('# Create DOCX\n\nThis skill creates DOCX documents.')
     });
 
-    await learn('@anthropics/create-docx', { registryPath: join(tmpRoot, 'registry') });
+    await learn('@anthropics/create-docx', { registry: join(tmpRoot, 'registry') });
 
     // Verify skill was installed
     const skillPath = join(tmpRoot, '.claude', 'skills', 'create-docx.md');
@@ -86,7 +86,7 @@ describe('learn command', () => {
 
   it('should handle skill not found', async () => {
     await expect(
-      learn('nonexistent-skill-xyz', { registryPath: join(tmpRoot, 'registry') })
+      learn('nonexistent-skill-xyz', { registry: join(tmpRoot, 'registry') })
     ).rejects.toThrow('process.exit called');
 
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No skills found'));
@@ -103,7 +103,7 @@ describe('learn command', () => {
       });
     });
 
-    await learn('@community/kungfu', { registryPath: join(tmpRoot, 'registry') });
+    await learn('@community/kungfu', { registry: join(tmpRoot, 'registry') });
 
     // Verify both kungfu and its dependency were installed
     const kungfuPath = join(tmpRoot, '.claude', 'skills', 'kungfu.md');
@@ -127,7 +127,7 @@ describe('learn command', () => {
       text: () => Promise.resolve('# Test Skill\n\nTest content')
     });
 
-    await learn('@anthropics/create-docx', { registryPath: join(tmpRoot, 'registry') });
+    await learn('@anthropics/create-docx', { registry: join(tmpRoot, 'registry') });
 
     // Verify installed in Claude
     expect(existsSync(join(tmpRoot, '.claude', 'skills', 'create-docx.md'))).toBe(true);
@@ -145,7 +145,7 @@ describe('learn command', () => {
       text: () => Promise.resolve('# Versioned Skill\n\nVersion 1.0.0 content')
     });
 
-    await learn('@anthropics/create-docx@1.0.0', { registryPath: join(tmpRoot, 'registry') });
+    await learn('@anthropics/create-docx@1.0.0', { registry: join(tmpRoot, 'registry') });
 
     // Verify skill was installed
     expect(existsSync(join(tmpRoot, '.claude', 'skills', 'create-docx.md'))).toBe(true);

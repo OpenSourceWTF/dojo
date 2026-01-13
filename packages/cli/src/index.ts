@@ -23,12 +23,14 @@ program
 program.command('learn')
   .description('Install a skill')
   .argument('<skill>', 'Skill name or FQN (e.g., @org/skill)')
-  .action(learn);
+  .option('--registry <url>', 'Registry URL (local path or github:owner/repo)')
+  .action((skill, opts) => learn(skill, { registry: opts.registry }));
 
 program.command('search')
   .description('Search for skills in the registry')
   .argument('<term>', 'Search term')
-  .action(search);
+  .option('--registry <url>', 'Registry URL (local path or github:owner/repo)')
+  .action((term, opts) => search(term, { registry: opts.registry }));
 
 program.command('list')
   .description('List installed skills')

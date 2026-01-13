@@ -14,7 +14,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import * as readline from 'node:readline';
 
 interface LearnOptions {
-  registryPath?: string;
+  registry?: string;  // Local path, github:owner/repo, or URL
 }
 
 /**
@@ -116,7 +116,14 @@ ${content}`;
 
 export async function learn(skill: string, options: LearnOptions = {}) {
   const projectRoot = process.cwd();
-  const registryPath = options.registryPath || join(projectRoot, 'registry');
+
+  // Parse registry option - if local path, use localOnly mode
+  const isLocalRegistry = Boolean(options.registry && !options.registry.startsWith('github:') && !options.registry.startsWith('https://'));
+  const registryConfig = {
+    localRegistryPath: isLocalRegistry ? options.registry : undefined,
+    localOnly: isLocalRegistry,
+    remoteUrl: !isLocalRegistry ? options.registry : undefined
+  };
 
   // 1. Parse skill input
   const { name: skillQuery, version } = parseSkillInput(skill);
@@ -124,7 +131,10 @@ export async function learn(skill: string, options: LearnOptions = {}) {
   console.log(chalk.blue(`🔍 Searching for "${skillQuery}"...`));
 
   // 2. Search registry
-  const results = await searchRegistry(skillQuery, registryPath);
+  const results = await searchRegistry(skillQuery, {
+    localRegistryPath: registryConfig.localRegistryPath,
+    localOnly: registryConfig.localOnly
+  });
 
   if (results.length === 0) {
     console.log(chalk.red(`\n❌ No skills found matching "${skillQuery}"`));
@@ -147,7 +157,7 @@ export async function learn(skill: string, options: LearnOptions = {}) {
   }
 
   // 4. Load full registry for dependency resolution
-  const registry = await loadRegistry(registryPath);
+  const registry = await loadRegistry(registryConfig.localRegistryPath, { localOnly: registryConfig.localOnly });
   const selectedSkill = registry.skills.get(selectedFqn);
 
   if (!selectedSkill) {

@@ -59,7 +59,7 @@ describe('Registry Loader', () => {
         })
       );
 
-      const registry = await loadRegistry(tmpRoot);
+      const registry = await loadRegistry(tmpRoot, { localOnly: true });
 
       expect(registry.skills.size).toBe(2);
 

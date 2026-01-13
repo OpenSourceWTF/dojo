@@ -4,11 +4,10 @@
  * See LICENSE file for details.
  */
 
-import { loadRegistry, SkillEntry } from './loader.js';
-import { join } from 'node:path';
+import { loadRegistry, SkillEntry, LoadRegistryOptions } from './loader.js';
 
 export { loadRegistry, mergeRegistries } from './loader.js';
-export type { SkillEntry, Registry } from './loader.js';
+export type { SkillEntry, Registry, LoadRegistryOptions } from './loader.js';
 
 export interface SearchResult {
   fqn: string;
@@ -16,10 +15,13 @@ export interface SearchResult {
   score: number;
 }
 
-export async function searchRegistry(term: string, registryPath?: string): Promise<SearchResult[]> {
-  // TODO: better configuration for registry path
-  const regPath = registryPath || join(process.cwd(), 'registry');
-  const registry = await loadRegistry(regPath);
+export interface SearchOptions extends LoadRegistryOptions {
+  localRegistryPath?: string;
+}
+
+export async function searchRegistry(term: string, options: SearchOptions = {}): Promise<SearchResult[]> {
+  // Fetch from remote GitHub registry, with optional local user registry
+  const registry = await loadRegistry(options.localRegistryPath, { localOnly: options.localOnly });
   const results: SearchResult[] = [];
   const lowerTerm = term.toLowerCase();
 

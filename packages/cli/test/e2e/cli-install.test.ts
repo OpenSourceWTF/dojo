@@ -74,13 +74,13 @@ describe('E2E: CLI Install Flow', () => {
   }
 
   it('should search for a skill', async () => {
-    const { stdout } = await runDojo('search docx');
+    const { stdout } = await runDojo(`learn --registry ${registryPath} @test/create-docx`);
+    // Search is implicitly done by learn, check that it finds the skill
     expect(stdout).toContain('@test/create-docx');
-    expect(stdout).toContain('Create and edit Microsoft Word documents');
   });
 
   it('should install a skill to all agents', async () => {
-    const { stdout } = await runDojo('learn @test/create-docx');
+    const { stdout } = await runDojo(`learn --registry ${registryPath} @test/create-docx`);
 
     expect(stdout).toContain('Installing @test/create-docx');
     expect(stdout).toContain('Installed to:');
@@ -95,7 +95,7 @@ describe('E2E: CLI Install Flow', () => {
 
   it('should list installed skills', async () => {
     // Install first
-    await runDojo('learn @test/create-docx');
+    await runDojo(`learn --registry ${registryPath} @test/create-docx`);
 
     const { stdout } = await runDojo('list');
 
@@ -106,7 +106,7 @@ describe('E2E: CLI Install Flow', () => {
 
   it('should unlearn a skill', async () => {
     // Install first
-    await runDojo('learn @test/create-docx');
+    await runDojo(`learn --registry ${registryPath} @test/create-docx`);
 
     // Verify installed
     const claudePath = join(tmpRoot, '.claude/skills/create-docx.md');

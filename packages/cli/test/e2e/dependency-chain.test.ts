@@ -119,7 +119,7 @@ describe('E2E: Dependency Chain Resolution', () => {
     it('should install all dependencies in chain', async () => {
       await createDependencyChainRegistry();
 
-      const { stdout } = await runDojo('learn @test/skill-a');
+      const { stdout } = await runDojo(`learn --registry ${registryPath} @test/skill-a`);
 
       // All 3 skills should be mentioned
       expect(stdout).toContain('skill-a');
@@ -136,7 +136,7 @@ describe('E2E: Dependency Chain Resolution', () => {
     it('should install base dependency first (skill-c)', async () => {
       await createDependencyChainRegistry();
 
-      await runDojo('learn @test/skill-a');
+      await runDojo(`learn --registry ${registryPath} @test/skill-a`);
 
       // Verify skill-c (no dependencies) is installed
       const skillCPath = join(tmpRoot, '.claude/skills/skill-c.md');
@@ -149,7 +149,7 @@ describe('E2E: Dependency Chain Resolution', () => {
     it('should install intermediate dependency (skill-b)', async () => {
       await createDependencyChainRegistry();
 
-      await runDojo('learn @test/skill-a');
+      await runDojo(`learn --registry ${registryPath} @test/skill-a`);
 
       // Verify skill-b is installed
       const skillBPath = join(tmpRoot, '.claude/skills/skill-b.md');
@@ -162,7 +162,7 @@ describe('E2E: Dependency Chain Resolution', () => {
     it('should install requested skill last (skill-a)', async () => {
       await createDependencyChainRegistry();
 
-      await runDojo('learn @test/skill-a');
+      await runDojo(`learn --registry ${registryPath} @test/skill-a`);
 
       // Verify skill-a is installed
       const skillAPath = join(tmpRoot, '.claude/skills/skill-a.md');
@@ -178,7 +178,7 @@ describe('E2E: Dependency Chain Resolution', () => {
       await createCycleRegistry();
 
       try {
-        await runDojo('learn @test/cycle-a');
+        await runDojo(`learn --registry ${registryPath} @test/cycle-a`);
         // If no error thrown, check stdout for cycle message
         expect.fail('Should have thrown or printed cycle error');
       } catch (error: any) {
@@ -197,7 +197,7 @@ describe('E2E: Dependency Chain Resolution', () => {
       await createCycleRegistry();
 
       try {
-        await runDojo('learn @test/cycle-a');
+        await runDojo(`learn --registry ${registryPath} @test/cycle-a`);
         expect.fail('Should have thrown error');
       } catch (error: any) {
         const output = error.stdout + error.stderr;
