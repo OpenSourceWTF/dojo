@@ -20,11 +20,20 @@ function highlightTerm(text: string, term: string): string {
 }
 
 /**
- * Extract organization from FQN like @org/skill
+ * Extract organization from FQN or source
  */
-function extractOrg(fqn: string): string | null {
-  const match = fqn.match(/^@([^/]+)\//);
-  return match ? match[1] : null;
+function extractOrg(fqn: string, source?: string): string | null {
+  // First try FQN like @org/skill
+  const fqnMatch = fqn.match(/^@([^/]+)\//);
+  if (fqnMatch) return fqnMatch[1];
+
+  // Try source like github:org/repo
+  if (source) {
+    const sourceMatch = source.match(/github:([^/]+)\//);
+    if (sourceMatch) return sourceMatch[1];
+  }
+
+  return null;
 }
 
 export async function search(term: string, options: SearchOptions = {}) {
@@ -60,7 +69,7 @@ export async function search(term: string, options: SearchOptions = {}) {
   console.log(`Found ${results.length} skills matching "${term}":\n`);
 
   for (const res of results) {
-    const org = extractOrg(res.fqn);
+    const org = extractOrg(res.fqn, res.skill.source);
     const orgLabel = org ? chalk.gray(`[${org}] `) : '';
     const highlightedFqn = highlightTerm(res.fqn, term);
 
