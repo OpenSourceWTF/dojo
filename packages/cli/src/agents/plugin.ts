@@ -7,6 +7,19 @@
 import { SkillFormatPlugin, SkillFormat, getFormatPlugin } from './formats/index.js';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+
+/**
+ * Check if a CLI command exists in PATH.
+ */
+function cliExists(command: string): boolean {
+  try {
+    execSync(`which ${command}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Detected agent information.
@@ -130,6 +143,17 @@ export function createAgentPlugin(config: {
     cli: config.cli,
 
     detect(projectRoot: string): DetectedAgent | null {
+      // Primary: Check if CLI command exists
+      if (config.cli && cliExists(config.cli)) {
+        // CLI exists - always use project-local path (will be created during install)
+        return {
+          name: config.name,
+          path: join(projectRoot, config.agentDir),
+          format: config.format
+        };
+      }
+
+      // Fallback: Check directory existence (for agents without CLI)
       const fullPath = join(projectRoot, config.agentDir);
       if (!existsSync(fullPath)) return null;
       return {

@@ -12,9 +12,7 @@ import {
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { installSkill } from "@opensourcewtf/dojo/lib/install.js";
-import { Hono } from "hono";
-import { serve } from "@hono/node-server";
+import { installSkill, uninstallSkill } from "@opensourcewtf/dojo/lib/install.js";
 
 export const TOOLS = [
   {
@@ -31,20 +29,43 @@ export const TOOLS = [
           type: "string",
           description: "Optional version (semver or commit hash)",
         },
+        projectRoot: {
+          type: "string",
+          description: "Project root directory where skills will be installed. If not provided, uses current working directory.",
+        },
+      },
+      required: ["skill"],
+    },
+  },
+  {
+    name: "dojo_unlearn",
+    description: "Use this when the user asks to remove, uninstall, or unlearn a skill. Removes skill files from all detected agent directories.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skill: {
+          type: "string",
+          description: "The skill name to remove",
+        },
+        projectRoot: {
+          type: "string",
+          description: "Project root directory where skills will be removed from. If not provided, uses current working directory.",
+        },
       },
       required: ["skill"],
     },
   },
 ];
 
-export async function handleDojoLearn(args: any) {
-  const { skill, version } = args as {
+export async function handleDojoLearn(args: unknown) {
+  const { skill, version, projectRoot } = args as {
     skill: string;
     version?: string;
+    projectRoot?: string;
   };
 
   try {
-    const result = await installSkill(skill, { version });
+    const result = await installSkill(skill, { version, projectRoot });
 
     if (!result.success) {
       return {
@@ -59,9 +80,59 @@ export async function handleDojoLearn(args: any) {
     }
 
     const skillName = result.fqn || skill;
-    let responseText = `I know kung fu! 🥋\n\nInstalled ${skillName} to:\n`;
+    const displayName = skillName.split('/').pop() || skillName;
+    let responseText = `I know ${displayName}! 🥋\n\nInstalled to:\n`;
 
     for (const p of result.installedPaths) {
+      responseText += `• ${p}\n`;
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: responseText.trim(),
+        },
+      ],
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Error: ${message}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+
+export async function handleDojoUnlearn(args: unknown) {
+  const { skill, projectRoot } = args as {
+    skill: string;
+    projectRoot?: string;
+  };
+
+  try {
+    const result = await uninstallSkill(skill, { projectRoot });
+
+    if (!result.success) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ ${result.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    let responseText = `🗑️ Unlearned ${skill}!\n\nRemoved from:\n`;
+
+    for (const p of result.removedPaths) {
       responseText += `• ${p}\n`;
     }
 
@@ -106,33 +177,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name !== "dojo_learn") {
-    throw new McpError(
-      ErrorCode.MethodNotFound,
-      `Unknown tool: ${request.params.name}`
-    );
+  switch (request.params.name) {
+    case "dojo_learn":
+      return handleDojoLearn(request.params.arguments);
+    case "dojo_unlearn":
+      return handleDojoUnlearn(request.params.arguments);
+    default:
+      throw new McpError(
+        ErrorCode.MethodNotFound,
+        `Unknown tool: ${request.params.name}`
+      );
   }
-
-  return handleDojoLearn(request.params.arguments);
 });
 
-const app = new Hono();
+// MCP uses stdio transport - start it when run directly
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("Dojo MCP server running via stdio");
+}
 
-// Custom endpoint for verification as requested in T15
-app.get("/mcp/tools", (c) => {
-  return c.json({ tools: TOOLS });
-});
-
-// We can still support stdio if needed, but the verify command uses HTTP.
-// For now, let's just use the Hono server for HTTP.
-
-const port = 3000;
-
-// Only start the server if this file is run directly
-if (process.argv[1]?.endsWith('index.js') || process.env.NODE_ENV === 'production') {
-  console.error(`Dojo MCP server running on http://localhost:${port}`);
-  serve({
-    fetch: app.fetch,
-    port,
-  });
+// Only start if this file is run directly
+if (process.argv[1]?.endsWith("index.js")) {
+  main().catch(console.error);
 }

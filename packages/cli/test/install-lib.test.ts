@@ -126,7 +126,7 @@ describe('Install Library', () => {
       expect(content).toContain('dojo_fqn: @test/basic');
     });
 
-    it('should return failure when no agents detected', async () => {
+    it('should handle missing directory with CLI detection', async () => {
       // Remove existing agent directory
       await rm(join(tmpRoot, '.claude'), { recursive: true, force: true });
 
@@ -135,8 +135,14 @@ describe('Install Library', () => {
         projectRoot: tmpRoot
       });
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain('No AI agent directories detected');
+      // With CLI detection, result depends on whether CLI exists
+      // If CLI exists: success (directory created)
+      // If CLI doesn't exist (CI): failure (no agents detected)
+      if (result.success) {
+        expect(result.installedPaths.length).toBeGreaterThan(0);
+      } else {
+        expect(result.message).toContain('No AI agent directories detected');
+      }
     });
 
     it('should install to global directory when global flag is set', async () => {

@@ -13,7 +13,8 @@ import { searchRegistry, loadRegistry } from '../registry/index.js';
 import { resolveSkill, detectCycle } from '../resolver/dependencies.js';
 import { downloadSkill } from '../download/github.js';
 import { detectAgents, getPluginForAgent } from '../agents/detector.js';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -260,6 +261,89 @@ export async function installSkill(
       success: false,
       message,
       installedPaths: [],
+    };
+  }
+}
+
+export interface UninstallOptions {
+  projectRoot?: string;
+}
+
+export interface UninstallResult {
+  success: boolean;
+  message: string;
+  removedPaths: string[];
+}
+
+/**
+ * Uninstall a skill programmatically.
+ * Used by MCP server and can be called from other tools.
+ *
+ * @param skill - Skill name to remove
+ * @param options - Uninstall options
+ * @returns Uninstall result
+ */
+export async function uninstallSkill(
+  skill: string,
+  options: UninstallOptions = {}
+): Promise<UninstallResult> {
+  const projectRoot = options.projectRoot || process.cwd();
+  const removedPaths: string[] = [];
+
+  try {
+    // Detect agents
+    const agents = detectAgents(projectRoot);
+
+    if (agents.length === 0) {
+      return {
+        success: false,
+        message: 'No AI agent directories detected. Install an agent CLI first (claude, gemini, cursor, codex).',
+        removedPaths: [],
+      };
+    }
+
+    // Remove from each agent using plugins
+    for (const agent of agents) {
+      const plugin = getPluginForAgent(agent);
+      if (plugin) {
+        const removed = await plugin.removeSkill({
+          projectRoot,
+          skillName: skill,
+        });
+        if (removed) {
+          const skillPath = plugin.getSkillPath(projectRoot, skill);
+          const relativePath = skillPath.replace(projectRoot + '/', '');
+          removedPaths.push(relativePath);
+        }
+      }
+    }
+
+    // Remove from local .dojo/skills
+    const localSkillPath = join(getLocalSkillsDir(projectRoot), `${skill}.md`);
+    if (existsSync(localSkillPath)) {
+      await unlink(localSkillPath);
+      removedPaths.push(`.dojo/skills/${skill}.md`);
+    }
+
+    if (removedPaths.length === 0) {
+      return {
+        success: false,
+        message: `Skill "${skill}" not found in any agent directories`,
+        removedPaths: [],
+      };
+    }
+
+    return {
+      success: true,
+      message: `Successfully uninstalled ${skill}`,
+      removedPaths,
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message,
+      removedPaths: [],
     };
   }
 }

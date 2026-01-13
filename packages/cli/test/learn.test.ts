@@ -193,7 +193,7 @@ describe('learn command', () => {
     );
   });
 
-  it('should exit gracefully when no agents detected', async () => {
+  it('should install to detected agents even without directories', async () => {
     // Remove the claude directory that was created in beforeEach
     await rm(join(tmpRoot, '.claude'), { recursive: true, force: true });
 
@@ -202,13 +202,13 @@ describe('learn command', () => {
       text: () => Promise.resolve('# Test Skill')
     });
 
-    // Should return early without error (no auto-create behavior)
+    // With CLI detection mocked, agents are detected and directories are created
     await expect(
       learn('@anthropics/create-docx', { registry: join(tmpRoot, 'registry') })
     ).resolves.not.toThrow();
 
-    // Directory should NOT be auto-created
-    expect(existsSync(join(tmpRoot, '.claude', 'skills'))).toBe(false);
+    // Directory IS created because CLI detection found agents
+    expect(existsSync(join(tmpRoot, '.claude', 'skills', 'create-docx', 'SKILL.md'))).toBe(true);
   });
 
   it('should handle global install flag', async () => {
@@ -315,7 +315,7 @@ This is the skill body.`)
     expect(existsSync(join(tmpRoot, '.gemini', 'skills', 'create-docx', 'SKILL.md'))).toBe(false);
   });
 
-  it('should warn and skip when forAgents includes undetected agent', async () => {
+  it('should install to filtered agents even without directories', async () => {
     // Remove all agent directories
     await rm(join(tmpRoot, '.claude'), { recursive: true, force: true });
 
@@ -324,7 +324,7 @@ This is the skill body.`)
       text: () => Promise.resolve('# Test Skill')
     });
 
-    // Should exit gracefully (no auto-create behavior)
+    // With CLI detection mocked, agents are detected and directories are created
     await expect(
       learn('@anthropics/create-docx', {
         registry: join(tmpRoot, 'registry'),
@@ -332,8 +332,8 @@ This is the skill body.`)
       })
     ).resolves.not.toThrow();
 
-    // Directory should NOT be auto-created
-    expect(existsSync(join(tmpRoot, '.claude', 'skills', 'create-docx', 'SKILL.md'))).toBe(false);
+    // Directory IS created because CLI detection found claude
+    expect(existsSync(join(tmpRoot, '.claude', 'skills', 'create-docx', 'SKILL.md'))).toBe(true);
   });
 
   it('should install skill to multiple agents', async () => {
