@@ -8,8 +8,10 @@ import { createAgentPlugin } from '../plugin.js';
 
 /**
  * Cline agent plugin (formerly Continue).
- * Skills are stored in .clinerules/{skill}.md
- * Also supports .clinerules/AGENTS.md for general rules.
+ * Rules are stored in .clinerules/ folder as markdown files
+ * Also supports .clinerules/AGENTS.md for general rules
+ * 
+ * @see https://docs.cline.bot/features/cline-rules
  */
 export const clinePlugin = createAgentPlugin({
   name: 'cline',

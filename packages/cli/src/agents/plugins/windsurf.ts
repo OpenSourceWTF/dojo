@@ -7,16 +7,16 @@
 import { createAgentPlugin } from '../plugin.js';
 
 /**
- * Windsurf agent plugin.
- * Skills are stored in .windsurf/rules/{skill}/SKILL.md
- * Uses .windsurfrules at project root for main rules.
- * Supports MCP via .windsurf/mcp.json
+ * Windsurf agent plugin (Codeium).
+ * Workflows are stored in .windsurf/workflows/{workflow}.md
+ * Rules can be defined in .windsurfrules at project root
+ * 
+ * @see https://docs.windsurf.com/windsurf/cascade/workflows
  */
 export const windsurfPlugin = createAgentPlugin({
   name: 'windsurf',
   displayName: 'Windsurf',
-  format: 'folder-skill',
-  agentDir: '.windsurf/rules',
+  format: 'flat-md',
+  agentDir: '.windsurf/workflows',
   cli: 'windsurf'
-  // MCP support via .windsurf/mcp.json (similar to Cursor)
 });

@@ -7,9 +7,11 @@
 import { createAgentPlugin } from '../plugin.js';
 
 /**
- * JetBrains Junie agent plugin (NOT in CAM - dojo exclusive).
- * Skills are stored in .junie/skills/{skill}.md
- * Junie is JetBrains' AI coding assistant.
+ * JetBrains Junie agent plugin.
+ * Guidelines are stored in .junie/guidelines.md (single file)
+ * Dojo creates skill files in .junie/skills/ for additional skills
+ * 
+ * @see https://www.jetbrains.com/help/junie/customize-guidelines.html
  */
 export const juniePlugin = createAgentPlugin({
   name: 'junie',

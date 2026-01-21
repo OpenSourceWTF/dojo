@@ -7,9 +7,12 @@
 import { createAgentPlugin } from '../plugin.js';
 
 /**
- * Zed AI agent plugin (NOT in CAM - dojo exclusive).
- * Skills are stored in .zed/skills/{skill}.md
- * Zed's AI assistant uses context from project.
+ * Zed AI agent plugin.
+ * Zed uses .rules at project root (single file) for project rules.
+ * Also supports: .cursorrules, .windsurfrules, .clinerules, AGENTS.md, CLAUDE.md, GEMINI.md
+ * Dojo creates skill files in .zed/skills/ for additional skills
+ * 
+ * @see https://zed.dev/docs/ai/rules
  */
 export const zedPlugin = createAgentPlugin({
   name: 'zed',
