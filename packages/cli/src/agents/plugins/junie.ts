@@ -8,15 +8,16 @@ import { createAgentPlugin } from '../plugin.js';
 
 /**
  * JetBrains Junie agent plugin.
- * Guidelines are stored in .junie/guidelines.md (single file)
- * Dojo creates skill files in .junie/skills/ for additional skills
+ * Guidelines in .junie/guidelines.md
+ * MCP configuration is done via UI settings.
  * 
  * @see https://www.jetbrains.com/help/junie/customize-guidelines.html
+ * @see https://www.jetbrains.com/help/ai-assistant/mcp.html
  */
 export const juniePlugin = createAgentPlugin({
   name: 'junie',
   displayName: 'JetBrains Junie',
   format: 'flat-md',
   agentDir: '.junie/skills',
-  // Junie is integrated into JetBrains IDEs
+  // MCP config is UI-based
 });

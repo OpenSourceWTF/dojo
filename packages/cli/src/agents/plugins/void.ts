@@ -7,13 +7,20 @@
 import { createAgentPlugin } from '../plugin.js';
 
 /**
- * Void agent plugin (open-source AI editor, NOT in CAM - dojo exclusive).
- * Skills are stored in .void/skills/{skill}.md
+ * Void agent plugin (Void Editor).
+ * Skills are stored in .void/skills/
+ * MCP config in project root mcp_config.json
+ * 
+ * @see https://deepwiki.com/voideditor/void/3.6-model-context-protocol-(mcp)-service
  */
 export const voidPlugin = createAgentPlugin({
   name: 'void',
   displayName: 'Void',
   format: 'flat-md',
   agentDir: '.void/skills',
-  cli: 'void'
+  mcpConfig: {
+    path: 'mcp_config.json', // Project-level config
+    format: 'json',
+    key: 'mcpServers'
+  }
 });

@@ -8,14 +8,21 @@ import { createAgentPlugin } from '../plugin.js';
 
 /**
  * Cursor agent plugin.
- * Skills are stored in .cursor/rules/{skill}/RULE.md
- * Note: Cursor does not support MCP servers currently.
+ * Rules are stored in .cursor/rules/{rule}.md
+ * MCP config is stored in ~/.cursor/mcp.json
+ * 
+ * @see https://cursor.com/docs/context/rules
+ * @see https://cursor.com/docs/context/mcp
  */
 export const cursorPlugin = createAgentPlugin({
   name: 'cursor',
   displayName: 'Cursor',
   format: 'folder-rule',
   agentDir: '.cursor/rules',
-  cli: 'cursor'
-  // No mcpConfig - Cursor doesn't support MCP
+  cli: 'cursor',
+  mcpConfig: {
+    path: '~/.cursor/mcp.json',
+    format: 'json',
+    key: 'mcpServers'
+  }
 });

@@ -7,9 +7,11 @@
 import { createAgentPlugin } from '../plugin.js';
 
 /**
- * Aider agent plugin (NOT in CAM - dojo exclusive).
- * Skills are stored in .aider/skills/{skill}.md
- * Aider uses .aider.conf.yml for configuration.
+ * Aider agent plugin.
+ * Skills stored in .aider/skills/
+ * Aider does not natively consume MCP servers (it can be an MCP server).
+ * 
+ * @see https://aider.chat/
  */
 export const aiderPlugin = createAgentPlugin({
   name: 'aider',

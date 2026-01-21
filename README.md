@@ -61,38 +61,38 @@ Dojo supports 21 AI coding assistants across three categories:
 | **Claude** | `.claude/skills/{skill}/SKILL.md` | folder-skill | `~/.claude.json` |
 | **Gemini** | `.gemini/skills/{skill}/SKILL.md` | folder-skill | `~/.gemini/settings.json` |
 | **Antigravity** | `.agent/workflows/{skill}.md` | flat-md | `~/.gemini/antigravity/mcp_config.json` |
-| **Cursor** | `.cursor/rules/{skill}/RULE.md` | folder-rule | — |
+| **Cursor** | `.cursor/rules/{skill}/RULE.md` | folder-rule | `~/.cursor/mcp.json` |
 | **Codex** | `.codex/skills/{skill}/SKILL.md` | folder-skill | — |
 
 ### CAM-Compatible Agents
 
 These agents are compatible with [block/ai-rules](https://github.com/block/ai-rules):
 
-| Agent | Skill Directory | Format | Docs |
-|-------|-----------------|--------|------|
-| **Amp** | `.agents/skills/{skill}/SKILL.md` | folder-skill | Sourcegraph Amp |
-| **Cline** | `.clinerules/{skill}.md` | flat-md | [docs.cline.bot](https://docs.cline.bot/features/cline-rules) |
-| **Copilot** | `.github/copilot-instructions/{skill}.md` | flat-md | GitHub Copilot |
-| **Firebender** | `.firebender/skills/{skill}/SKILL.md` | folder-skill | Firebender |
-| **Goose** | `.goose/skills/{skill}.md` | flat-md | Block/Square Goose |
-| **Kilocode** | `.kilocode/rules/{skill}.md` | flat-md | Kilocode |
-| **Roo** | `.roo/rules/{skill}.md` | flat-md | Roo |
+| Agent | Skill Directory | Format | MCP Config | Docs |
+|-------|-----------------|--------|------------|------|
+| **Amp** | `.agents/skills/{skill}/SKILL.md` | folder-skill | — | Sourcegraph Amp |
+| **Cline** | `.clinerules/{skill}.md` | flat-md | (UI Settings) | [docs.cline.bot](https://docs.cline.bot/features/cline-rules) |
+| **Copilot** | `.github/copilot-instructions/{skill}.md` | flat-md | — | GitHub Copilot |
+| **Firebender** | `.firebender/skills/{skill}/SKILL.md` | folder-skill | — | Firebender |
+| **Goose** | `.goose/skills/{skill}.md` | flat-md | — | Block/Square Goose |
+| **Kilocode** | `.kilocode/rules/{skill}.md` | flat-md | — | Kilocode |
+| **Roo** | `.roo/rules/{skill}.md` | flat-md | `.roo/mcp.json` | Roo |
 
 ### Dojo-Exclusive Agents
 
 Not supported by CAM—unique to Dojo:
 
-| Agent | Skill Directory | Format | Docs |
-|-------|-----------------|--------|------|
-| **Windsurf** | `.windsurf/workflows/{skill}.md` | flat-md | [docs.windsurf.com](https://docs.windsurf.com/windsurf/cascade/workflows) |
-| **Aider** | `.aider/skills/{skill}.md` | flat-md | [aider.chat](https://aider.chat/docs/config/options.html) |
-| **Zed AI** | `.zed/skills/{skill}.md` | flat-md | [zed.dev/docs/ai/rules](https://zed.dev/docs/ai/rules) |
-| **Cody** | `.cody/skills/{skill}.md` | flat-md | Sourcegraph Cody |
-| **Void** | `.void/skills/{skill}.md` | flat-md | Void Editor |
-| **Junie** | `.junie/skills/{skill}.md` | flat-md | [jetbrains.com/help/junie](https://www.jetbrains.com/help/junie/customize-guidelines.html) |
-| **Trae** | `.trae/skills/{skill}.md` | flat-md | ByteDance Trae |
-| **Bolt** | `.bolt/skills/{skill}.md` | flat-md | StackBlitz Bolt |
-| **Lovable** | `.lovable/skills/{skill}.md` | flat-md | Lovable AI |
+| Agent | Skill Directory | Format | MCP Config | Docs |
+|-------|-----------------|--------|------------|------|
+| **Windsurf** | `.windsurf/workflows/{skill}.md` | flat-md | `~/.codeium/windsurf/mcp_config.json` | [docs.windsurf.com](https://docs.windsurf.com/windsurf/cascade/workflows) |
+| **Aider** | `.aider/skills/{skill}.md` | flat-md | — | [aider.chat](https://aider.chat/docs/config/options.html) |
+| **Zed AI** | `.zed/skills/{skill}.md` | flat-md | `~/.config/zed/settings.json` | [zed.dev/docs/ai/rules](https://zed.dev/docs/ai/rules) |
+| **Cody** | `.cody/skills/{skill}.md` | flat-md | — | Sourcegraph Cody |
+| **Void** | `.void/skills/{skill}.md` | flat-md | `mcp_config.json` | Void Editor |
+| **Junie** | `.junie/skills/{skill}.md` | flat-md | (UI Settings) | [jetbrains.com/help/junie](https://www.jetbrains.com/help/junie/customize-guidelines.html) |
+| **Trae** | `.trae/skills/{skill}.md` | flat-md | — | ByteDance Trae |
+| **Bolt** | `.bolt/skills/{skill}.md` | flat-md | — | StackBlitz Bolt |
+| **Lovable** | `.lovable/skills/{skill}.md` | flat-md | — | Lovable AI |
 
 ### Skill Formats
 
