@@ -17,11 +17,15 @@ export interface SearchResult {
 
 export interface SearchOptions extends LoadRegistryOptions {
   localRegistryPath?: string;
+  remoteUrl?: string;
 }
 
 export async function searchRegistry(term: string, options: SearchOptions = {}): Promise<SearchResult[]> {
   // Fetch from remote GitHub registry, with optional local user registry
-  const registry = await loadRegistry(options.localRegistryPath, { localOnly: options.localOnly });
+  const registry = await loadRegistry(options.localRegistryPath, {
+    localOnly: options.localOnly,
+    remoteUrl: options.remoteUrl
+  });
   const results: SearchResult[] = [];
   const lowerTerm = term.toLowerCase();
 

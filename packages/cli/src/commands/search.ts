@@ -43,7 +43,10 @@ export async function search(term: string, options: SearchOptions = {}) {
 
   const registry = await loadRegistry(
     isLocalRegistry ? options.registry : undefined,
-    { localOnly: isLocalRegistry }
+    {
+      localOnly: isLocalRegistry,
+      remoteUrl: !isLocalRegistry ? options.registry : undefined
+    }
   );
 
   const results: { fqn: string, skill: SkillEntry, score: number }[] = [];

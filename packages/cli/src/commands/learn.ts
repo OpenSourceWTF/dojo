@@ -150,7 +150,8 @@ export async function learn(skill: string, options: LearnOptions = {}) {
 
   const results = await searchRegistry(skillQuery, {
     localRegistryPath: registryConfig.localRegistryPath,
-    localOnly: registryConfig.localOnly
+    localOnly: registryConfig.localOnly,
+    remoteUrl: registryConfig.remoteUrl
   });
 
   if (results.length === 0) {
@@ -169,7 +170,8 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     if (candidates.length === 0) {
       const mcpVariants = await searchRegistry(`mcp-${skillQuery}`, {
         localRegistryPath: registryConfig.localRegistryPath,
-        localOnly: registryConfig.localOnly
+        localOnly: registryConfig.localOnly,
+        remoteUrl: registryConfig.remoteUrl
       });
       candidates = mcpVariants.filter(r => r.skill.mcp_servers && r.skill.mcp_servers.length > 0);
 
@@ -196,7 +198,10 @@ export async function learn(skill: string, options: LearnOptions = {}) {
   }
 
   // 3. Load full registry for dependency resolution
-  const registry = await loadRegistry(registryConfig.localRegistryPath, { localOnly: registryConfig.localOnly });
+  const registry = await loadRegistry(registryConfig.localRegistryPath, {
+    localOnly: registryConfig.localOnly,
+    remoteUrl: registryConfig.remoteUrl
+  });
 
   // 4. Get skill entry
   const skillEntry = registry.skills.get(fqn);
@@ -275,7 +280,7 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     }
     // Sanitize to kebab-case
     skillName = skillName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const skillVersion = version || 'main';
+    const skillVersion = version || entry.versions?.latest || 'main';
 
     // Detect MCP-only entry: has mcp_servers but source doesn't point to a .md file
     const isMcpOnly = entry.mcp_servers && entry.mcp_servers.length > 0 &&

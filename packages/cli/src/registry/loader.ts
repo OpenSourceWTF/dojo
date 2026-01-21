@@ -1,29 +1,22 @@
-/**
- * @license MIT
- * Copyright (c) 2026 OpenSourceWTF
- * See LICENSE file for details.
- */
-
 import { readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { createHash } from 'node:crypto';
 
-// Remote registry configuration - using jsDelivr CDN (unlimited, globally cached)
-// Note: Using 'main' branch for development. Production deployments should use
-// version tags (e.g., v0.1.0) by updating REGISTRY_VERSION for better cache control.
-const REGISTRY_REPO = 'OpenSourceWTF/dojo-skills';
-const REGISTRY_VERSION = 'main';
-const REGISTRY_BASE_URL = `https://cdn.jsdelivr.net/gh/${REGISTRY_REPO}@${REGISTRY_VERSION}`;
+// Default Remote registry configuration
+const DEFAULT_REGISTRY_REPO = 'OpenSourceWTF/dojo-skills';
+const DEFAULT_REGISTRY_VERSION = 'main';
+const DEFAULT_REGISTRY_BASE_URL = `https://cdn.jsdelivr.net/gh/${DEFAULT_REGISTRY_REPO}@${DEFAULT_REGISTRY_VERSION}`;
 
 // Cache configuration
-const CACHE_DIR = join(homedir(), '.dojo', 'cache');
+const CACHE_ROOT = join(homedir(), '.dojo', 'cache');
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export interface McpServerConfig {
   name: string;
-  package: string;  // npm package name
-  command: string;  // e.g., "npx" or "node"
-  args: string[];   // command args
+  package: string;
+  command: string;
+  args: string[];
   env?: Record<string, string>;
 }
 
@@ -44,11 +37,6 @@ export interface Registry {
 }
 
 interface RegistryFile {
-  _meta?: {
-    source: string;
-    updated: string;
-    priority: number;
-  };
   skills: Record<string, SkillEntry>;
 }
 
@@ -58,37 +46,58 @@ interface RegistryIndex {
   categories: Record<string, string[]>;
 }
 
+interface RegistryContext {
+  baseUrl: string;
+  cacheDir: string;
+}
+
+export interface LoadRegistryOptions {
+  localOnly?: boolean;
+  remoteUrl?: string;
+}
+
 /**
  * Merge registries with priority.
- * The first argument has the HIGHEST priority (wins conflicts).
+ * The first argument has the HIGHEST priority.
  */
 export function mergeRegistries(...registries: Registry[]): Registry {
   const merged = new Map<string, SkillEntry>();
-
   for (let i = registries.length - 1; i >= 0; i--) {
     const registry = registries[i];
     for (const [fqn, skill] of registry.skills) {
       merged.set(fqn, skill);
     }
   }
-
   return { skills: merged };
 }
 
 /**
- * Ensure cache directory exists
+ * Get registry context (URL and cache location) based on options
  */
-async function ensureCacheDir(): Promise<void> {
+function getRegistryContext(options: LoadRegistryOptions = {}): RegistryContext {
+  const baseUrl = options.remoteUrl || DEFAULT_REGISTRY_BASE_URL;
+
+  // Create a cache namespace based on the URL
+  // If default URL, use 'default' namespace for backward compat compatibility/readability
+  let namespace = 'default';
+  if (baseUrl !== DEFAULT_REGISTRY_BASE_URL) {
+    namespace = createHash('sha256').update(baseUrl).digest('hex').substring(0, 12);
+  }
+
+  return {
+    baseUrl: baseUrl.replace(/\/$/, ''), // remove trailing slash
+    cacheDir: join(CACHE_ROOT, namespace)
+  };
+}
+
+async function ensureDir(path: string): Promise<void> {
   try {
-    await mkdir(CACHE_DIR, { recursive: true });
+    await mkdir(path, { recursive: true });
   } catch {
-    // Directory might already exist
+    // ignore
   }
 }
 
-/**
- * Check if a cached file is still valid
- */
 async function isCacheValid(cachePath: string): Promise<boolean> {
   try {
     const stats = await stat(cachePath);
@@ -98,46 +107,34 @@ async function isCacheValid(cachePath: string): Promise<boolean> {
   }
 }
 
-/**
- * Fetch with caching
- */
-async function fetchWithCache(url: string, cacheKey: string): Promise<string | null> {
-  await ensureCacheDir();
-  const cachePath = join(CACHE_DIR, `${cacheKey}.json`);
+async function fetchWithCache(url: string, context: RegistryContext, filename: string): Promise<string | null> {
+  await ensureDir(context.cacheDir);
+  const cachePath = join(context.cacheDir, filename);
 
-  // Check cache first
   if (await isCacheValid(cachePath)) {
     try {
       return await readFile(cachePath, 'utf-8');
     } catch {
-      // Cache read failed, fetch fresh
+      // ignore
     }
   }
 
-  // Fetch from remote
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) return null;
-
       const content = await res.text();
-
-      // Cache the result
       try {
         await writeFile(cachePath, content, 'utf-8');
-      } catch {
-        // Cache write failed, continue anyway
-      }
-
+      } catch { }
       return content;
     } finally {
       clearTimeout(timeout);
     }
   } catch {
-    // Network error or timeout, try stale cache
     try {
       return await readFile(cachePath, 'utf-8');
     } catch {
@@ -146,15 +143,10 @@ async function fetchWithCache(url: string, cacheKey: string): Promise<string | n
   }
 }
 
-/**
- * Fetch registry index from GitHub
- */
-async function fetchRegistryIndex(): Promise<RegistryIndex | null> {
-  const url = `${REGISTRY_BASE_URL}/registry/index.json`;
-  const content = await fetchWithCache(url, 'registry-index');
-
+async function fetchRegistryIndex(context: RegistryContext): Promise<RegistryIndex | null> {
+  const url = `${context.baseUrl}/registry/index.json`;
+  const content = await fetchWithCache(url, context, 'index.json');
   if (!content) return null;
-
   try {
     return JSON.parse(content) as RegistryIndex;
   } catch {
@@ -162,17 +154,10 @@ async function fetchRegistryIndex(): Promise<RegistryIndex | null> {
   }
 }
 
-/**
- * Load combined registry (all.json) from GitHub
- */
-async function loadCombinedRegistry(): Promise<Registry | null> {
-  const url = `${REGISTRY_BASE_URL}/registry/all.json`;
-  // Use a shorter TTL for the all-in-one file to ensure freshness?
-  // Or just rely on standard TTL. 1 hour is fine.
-  const content = await fetchWithCache(url, 'registry-all');
-
+async function loadCombinedRegistry(context: RegistryContext): Promise<Registry | null> {
+  const url = `${context.baseUrl}/registry/all.json`;
+  const content = await fetchWithCache(url, context, 'all.json');
   if (!content) return null;
-
   try {
     const json = JSON.parse(content) as RegistryFile;
     const skills = new Map<string, SkillEntry>(Object.entries(json.skills || {}));
@@ -182,15 +167,13 @@ async function loadCombinedRegistry(): Promise<Registry | null> {
   }
 }
 
-/**
- * Load a single registry JSON file from GitHub
- */
-async function loadRemoteRegistryFile(category: string, filename: string): Promise<Registry> {
+async function loadRemoteRegistryFile(category: string, filename: string, context: RegistryContext): Promise<Registry> {
   const skills = new Map<string, SkillEntry>();
-  const url = `${REGISTRY_BASE_URL}/registry/${category}/${filename}`;
-  const cacheKey = `registry-${category}-${filename.replace('.json', '')}`;
+  const url = `${context.baseUrl}/registry/${category}/${filename}`;
+  // Cache key needs to be unique per file
+  const cacheFilename = `${category}-${filename}`;
+  const content = await fetchWithCache(url, context, cacheFilename);
 
-  const content = await fetchWithCache(url, cacheKey);
   if (!content) return { skills };
 
   try {
@@ -198,66 +181,43 @@ async function loadRemoteRegistryFile(category: string, filename: string): Promi
     for (const [key, skill] of Object.entries(json.skills || {})) {
       skills.set(key, skill);
     }
-  } catch {
-    // Parse error
-  }
-
+  } catch { }
   return { skills };
 }
 
-/**
- * Load all registry files from a remote category
- */
-async function loadRemoteRegistryDir(category: string, files: string[]): Promise<Registry> {
-  const promises = files.map(file => loadRemoteRegistryFile(category, file));
+async function loadRemoteRegistryDir(category: string, files: string[], context: RegistryContext): Promise<Registry> {
+  const promises = files.map(file => loadRemoteRegistryFile(category, file, context));
   const registries = await Promise.all(promises);
-
   return mergeRegistries(...registries);
 }
 
-/**
- * Load registry from local filesystem (for development/offline)
- */
 async function loadLocalRegistryDir(dirPath: string): Promise<Registry> {
   const skills = new Map<string, SkillEntry>();
-
   try {
     const files = await readdir(dirPath);
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
-
-      const filePath = join(dirPath, file);
-      const content = await readFile(filePath, 'utf-8');
+      const content = await readFile(join(dirPath, file), 'utf-8');
       try {
         const json = JSON.parse(content) as RegistryFile;
         for (const [key, skill] of Object.entries(json.skills || {})) {
           skills.set(key, skill);
         }
       } catch (err: unknown) {
-        console.warn(`Failed to parse registry file ${filePath}:`, err);
+        console.warn(`Failed to parse registry file ${join(dirPath, file)}:`, err);
       }
     }
-  } catch (err: unknown) {
-    // Directory might not exist, ignore
-  }
-
+  } catch { }
   return { skills };
-}
-
-export interface LoadRegistryOptions {
-  localOnly?: boolean;  // Skip remote, use only local (for tests)
 }
 
 /**
  * Load registry from remote GitHub repo
- * Falls back to local if --offline or network fails
  */
 export async function loadRegistry(localPath?: string, options: LoadRegistryOptions = {}): Promise<Registry> {
-  // If localOnly mode (for tests), skip remote entirely
   if (options.localOnly && localPath) {
     const entries = await readdir(localPath, { withFileTypes: true });
     const registries: Registry[] = [];
-
     for (const entry of entries) {
       if (entry.isDirectory()) {
         registries.push(await loadLocalRegistryDir(join(localPath, entry.name)));
@@ -266,41 +226,23 @@ export async function loadRegistry(localPath?: string, options: LoadRegistryOpti
     return mergeRegistries(...registries);
   }
 
+  const context = getRegistryContext(options);
+  const combined = await loadCombinedRegistry(context);
 
-
-  // Optimize: Try to load combined registry first
-  const combined = await loadCombinedRegistry();
   if (combined) {
-    // If localPath is provided, we might want to merge local 'user' registry?
-    // But typically remote overrides unless user specifically wants local additions.
-    // Logic below merges remote + local-user.
     if (localPath) {
       try {
         const user = await loadLocalRegistryDir(join(localPath, 'user'));
         return mergeRegistries(combined, user);
-      } catch {
-        // ignore
-      }
+      } catch { }
     }
     return combined;
   }
 
-  // Fetch registry index first
-  const index = await fetchRegistryIndex();
-
+  const index = await fetchRegistryIndex(context);
   if (index && index.categories) {
-
-
-    // Sort categories to ensure deterministic order (though mergeRegistries precedence is array order)
-    // We typically want official > community > others. 
-    // Let's rely on mergeRegistries handling array order (last wins? No, first arg wins).
-    // mergeRegistries iterates backwards: priority is arg[0] > arg[1] ...
-
-    // We want explicit priority: official, community, then others alphabetically?
     const keys = Object.keys(index.categories);
     const priority = ['official', 'community'];
-
-    // Sort keys so priority ones come first
     keys.sort((a, b) => {
       const idxA = priority.indexOf(a);
       const idxB = priority.indexOf(b);
@@ -312,17 +254,13 @@ export async function loadRegistry(localPath?: string, options: LoadRegistryOpti
 
     const categoryTasks = keys.map(category => {
       const files = index.categories[category] || [];
-      return loadRemoteRegistryDir(category, files);
+      return loadRemoteRegistryDir(category, files, context);
     });
 
     const registries = await Promise.all(categoryTasks);
-
-    // Merge remote registries
     const remote = mergeRegistries(...registries);
 
-    // If we got skills from remote, use them
     if (remote.skills.size > 0) {
-      // Also merge any local user registry for custom skills
       if (localPath) {
         const user = await loadLocalRegistryDir(join(localPath, 'user'));
         return mergeRegistries(remote, user);
@@ -331,27 +269,18 @@ export async function loadRegistry(localPath?: string, options: LoadRegistryOpti
     }
   }
 
-  // Fallback to local registry
+  // Backup fallback: Local registry full scan
   if (localPath) {
-    // Check for all.json
     try {
       const allContent = await readFile(join(localPath, 'all.json'), 'utf-8');
       const json = JSON.parse(allContent) as RegistryFile;
       const skills = new Map<string, SkillEntry>(Object.entries(json.skills || {}));
-
-      const combined = { skills };
-      // Merge subdirectories if needed, or just return combined
-      // For simplicity, if all.json exists, assume it's complete for the standard categories
-      // But we still check 'user' dir
       const user = await loadLocalRegistryDir(join(localPath, 'user'));
-      return mergeRegistries(combined, user);
-    } catch {
-      // all.json not found, fall back to directory scanning
-    }
+      return mergeRegistries({ skills }, user);
+    } catch { }
 
     const entries = await readdir(localPath, { withFileTypes: true });
     const registries: Registry[] = [];
-
     for (const entry of entries) {
       if (entry.isDirectory()) {
         registries.push(await loadLocalRegistryDir(join(localPath, entry.name)));
