@@ -47,6 +47,7 @@ dojo learn --mcp playwright
 | 🔌 **MCP Server Setup** | Auto-configures MCP servers with env var prompting |
 | 🔗 **Skill Syncing** | Keep skills consistent across all your AI agents |
 | ⚡ **CLI Detection** | Automatically detects which agents you have installed |
+| 🛡️ **Registry Isolation** | Caches are namespaced by registry URL to prevent conflicts |
 
 ---
 
@@ -126,7 +127,7 @@ dojo learn skill-name -g                # Install globally to ~/.dojo/skills
 | `-g, --global` | Install to global `~/.dojo/skills` (shared across projects) |
 | `--mcp` | Install MCP servers only (skip skill files) |
 | `--for <agents>` | Target specific agents (comma-separated: `claude,gemini,cursor,codex`) |
-| `--registry <url>` | Custom registry (local path or `github:owner/repo`) |
+| `--registry <url>` | Custom registry (local path, `github:owner/repo`, or full URL) |
 
 > **Modal Behavior:** With `--mcp`, Dojo filters search results to only show skills with MCP servers and automatically finds `mcp-<name>` variants.
 
