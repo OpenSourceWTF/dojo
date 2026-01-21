@@ -4,13 +4,24 @@
  * See LICENSE file for details.
  */
 
+import { execSync } from 'node:child_process';
 import { plugins } from './plugins/index.js';
 import type { DetectedAgent, AgentPlugin } from './plugin.js';
-import { cliExists } from '../utils/cli-exists.js';
 
-// Re-export for backwards compatibility
-export { cliExists } from '../utils/cli-exists.js';
+// Re-export types for backwards compatibility
 export type { DetectedAgent } from './plugin.js';
+
+/**
+ * Check if a CLI command exists in PATH.
+ */
+export function cliExists(command: string): boolean {
+  try {
+    execSync(`which ${command}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Detection options for agent detection.

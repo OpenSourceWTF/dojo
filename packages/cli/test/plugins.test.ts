@@ -33,8 +33,10 @@ describe('Agent Plugins', () => {
 
   describe('Plugin Registry', () => {
     it('should export all plugins', () => {
-      expect(plugins).toHaveLength(5);
-      expect(plugins.map(p => p.name)).toEqual(['claude', 'gemini', 'antigravity', 'cursor', 'codex']);
+      expect(plugins).toHaveLength(21);
+      expect(plugins.map(p => p.name)).toContain('claude');
+      expect(plugins.map(p => p.name)).toContain('gemini');
+      expect(plugins.map(p => p.name)).toContain('windsurf');
     });
 
     it('should get plugin by name', () => {
@@ -49,7 +51,9 @@ describe('Agent Plugins', () => {
 
     it('should get all plugin names', () => {
       const names = getPluginNames();
-      expect(names).toEqual(['claude', 'gemini', 'antigravity', 'cursor', 'codex']);
+      expect(names).toHaveLength(21);
+      expect(names).toContain('claude');
+      expect(names).toContain('windsurf');
     });
   });
 

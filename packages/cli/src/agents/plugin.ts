@@ -7,7 +7,19 @@
 import { SkillFormatPlugin, SkillFormat, getFormatPlugin } from './formats/index.js';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { cliExists } from '../utils/cli-exists.js';
+import { execSync } from 'node:child_process';
+
+/**
+ * Check if a CLI command exists in PATH.
+ */
+function cliExists(command: string): boolean {
+  try {
+    execSync(`which ${command}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Detected agent information.
