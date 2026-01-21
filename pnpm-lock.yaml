@@ -36,18 +36,12 @@ importers:
 
   packages/mcp:
     dependencies:
-      '@hono/node-server':
-        specifier: ^1.8.0
-        version: 1.19.8(hono@4.11.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.1
         version: 1.25.2(hono@4.11.3)(zod@4.3.5)
       '@opensourcewtf/dojo':
-        specifier: workspace:*
-        version: link:../cli
-      hono:
-        specifier: ^4.0.0
-        version: 4.11.3
+        specifier: ^0.1.0
+        version: 0.1.1
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -266,6 +260,11 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
+
+  '@opensourcewtf/dojo@0.1.1':
+    resolution: {integrity: sha512-Um2p+m2PoWy2+HdbVcc+m6SG2u5usvkFzasJ5eM9wlicAHk0eUybGfNJ0PL4fvnsf5xOzk+k3tO+RYn2ZKqEKQ==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
 
   '@rollup/rollup-android-arm-eabi@4.55.1':
     resolution: {integrity: sha512-9R0DM/ykwfGIlNu6+2U09ga0WXeZ9MRC2Ter8jnz8415VbuIykVuc6bhdrbORFZANDmTDvq26mJrEVTl8TdnDg==}
@@ -1151,6 +1150,11 @@ snapshots:
     transitivePeerDependencies:
       - hono
       - supports-color
+
+  '@opensourcewtf/dojo@0.1.1':
+    dependencies:
+      chalk: 5.6.2
+      commander: 11.1.0
 
   '@rollup/rollup-android-arm-eabi@4.55.1':
     optional: true
