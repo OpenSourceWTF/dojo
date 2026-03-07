@@ -52,7 +52,7 @@ export interface SkillFormatPlugin {
   listSkills(baseDir: string): string[];
 
   /**
-   * Install a skill by creating symlink or copy.
+   * Install a skill by copying to the agent directory.
    * @returns Relative path to installed skill
    */
   installSkill(options: FormatInstallOptions): Promise<string>;

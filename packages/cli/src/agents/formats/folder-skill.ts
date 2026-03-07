@@ -5,8 +5,8 @@
  */
 
 import { existsSync, rmSync, readdirSync, statSync, lstatSync } from 'node:fs';
-import { mkdir, symlink } from 'node:fs/promises';
-import { join, dirname, relative } from 'node:path';
+import { mkdir, copyFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { SkillFormatPlugin, FormatInstallOptions, FormatRemoveOptions } from '../format-plugin.js';
 
 /**
@@ -28,7 +28,8 @@ export const folderSkillPlugin: SkillFormatPlugin = {
     return readdirSync(baseDir).filter(entry => {
       const entryPath = join(baseDir, entry);
       if (!statSync(entryPath).isDirectory()) return false;
-      return existsSync(join(entryPath, 'SKILL.md'));
+      // Use lstatSync to detect broken symlinks (existsSync returns false for those)
+      try { lstatSync(join(entryPath, 'SKILL.md')); return true; } catch { return false; }
     });
   },
 
@@ -39,7 +40,7 @@ export const folderSkillPlugin: SkillFormatPlugin = {
 
     await mkdir(skillDir, { recursive: true });
 
-    // Remove existing file/symlink if it exists (lstatSync catches broken symlinks too)
+    // Remove existing file if it exists
     try {
       lstatSync(destPath);
       rmSync(destPath, { force: true });
@@ -47,8 +48,7 @@ export const folderSkillPlugin: SkillFormatPlugin = {
       // File doesn't exist, which is fine
     }
 
-    const relPath = relative(skillDir, sourcePath);
-    await symlink(relPath, destPath);
+    await copyFile(sourcePath, destPath);
 
     return skillName;
   },

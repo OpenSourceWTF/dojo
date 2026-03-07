@@ -23,16 +23,16 @@ describe('sync command', () => {
     vi.restoreAllMocks();
   });
 
-  it('should error when no Claude directory exists', async () => {
-    // With CLI detection, Claude may be detected even without directory
-    // If Claude CLI is installed, sync will succeed with "No skills found"
+  it('should handle empty project with no agents', async () => {
+    // With no agent directories, sync should report no agents found
+    // If Claude CLI is installed, it may still detect agents
     try {
       await sync();
-      // Sync succeeded - Claude CLI must be installed
+      // Sync succeeded - an agent was detected (CLI installed)
       expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No skills found'));
     } catch {
-      // Sync threw - no Claude detected (only in CI without Claude CLI)
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No canonical source found'));
+      // Sync reported no agents
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No agent directories found'));
     }
   });
 
@@ -115,9 +115,10 @@ describe('sync command', () => {
 
     await sync();
 
-    // Verify output shows correct count
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('3 skills'));
+    // Verify output shows sync complete
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Sync complete'));
+    // Verify skills were discovered
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('3 skill'));
   });
 
   it('should skip directories without SKILL.md', async () => {

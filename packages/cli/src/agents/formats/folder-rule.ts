@@ -26,7 +26,8 @@ export const folderRulePlugin: SkillFormatPlugin = {
     return readdirSync(baseDir).filter(entry => {
       const entryPath = join(baseDir, entry);
       if (!statSync(entryPath).isDirectory()) return false;
-      return existsSync(join(entryPath, 'RULE.md'));
+      // Use lstatSync to detect broken symlinks (existsSync returns false for those)
+      try { lstatSync(join(entryPath, 'RULE.md')); return true; } catch { return false; }
     });
   },
 
@@ -78,7 +79,7 @@ ${content}`;
 
     await mkdir(skillDir, { recursive: true });
 
-    // Remove existing file/symlink if it exists (lstatSync catches broken symlinks too)
+    // Remove existing file if it exists
     try {
       lstatSync(destPath);
       rmSync(destPath, { force: true });

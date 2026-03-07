@@ -122,7 +122,7 @@ describe('E2E: Multi-Format Sync', () => {
 
     // Sync
     const { stdout } = await runDojo('sync');
-    expect(stdout).toContain('2 skills');
+    expect(stdout).toContain('2 skill');
 
     // Verify all synced
     expect(existsSync(join(tmpRoot, '.agent/workflows/skill-one.md'))).toBe(true);

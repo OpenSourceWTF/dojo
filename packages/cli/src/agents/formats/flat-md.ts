@@ -5,8 +5,8 @@
  */
 
 import { existsSync, rmSync, mkdirSync, readdirSync, lstatSync } from 'node:fs';
-import { symlink } from 'node:fs/promises';
-import { join, dirname, relative } from 'node:path';
+import { copyFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { SkillFormatPlugin, FormatInstallOptions, FormatRemoveOptions } from '../format-plugin.js';
 
 /**
@@ -34,7 +34,7 @@ export const flatMdPlugin: SkillFormatPlugin = {
 
     mkdirSync(dirname(destPath), { recursive: true });
 
-    // Remove existing file/symlink if it exists (lstatSync catches broken symlinks too)
+    // Remove existing file if it exists
     try {
       lstatSync(destPath);
       rmSync(destPath, { force: true });
@@ -42,8 +42,7 @@ export const flatMdPlugin: SkillFormatPlugin = {
       // File doesn't exist, which is fine
     }
 
-    const relPath = relative(dirname(destPath), sourcePath);
-    await symlink(relPath, destPath);
+    await copyFile(sourcePath, destPath);
 
     return `${skillName}.md`;
   },
@@ -52,15 +51,18 @@ export const flatMdPlugin: SkillFormatPlugin = {
     const { baseDir, skillName } = options;
     const skillPath = this.getSkillPath(baseDir, skillName);
 
-    if (existsSync(skillPath)) {
-      try {
-        rmSync(skillPath);
-        return true;
-      } catch {
-        return false;
-      }
+    // Use lstatSync to detect broken symlinks (existsSync returns false for those)
+    try {
+      lstatSync(skillPath);
+    } catch {
+      return false; // File doesn't exist at all
     }
-    return false;
+    try {
+      rmSync(skillPath);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   // Hub-and-spoke conversion: flat-md is identical to canonical (just markdown)

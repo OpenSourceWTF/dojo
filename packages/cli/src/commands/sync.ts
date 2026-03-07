@@ -5,78 +5,172 @@
  */
 
 import chalk from 'chalk';
-import { claudePlugin } from '../agents/plugins/claude.js';
-import { antigravityPlugin } from '../agents/plugins/antigravity.js';
-import { cursorPlugin } from '../agents/plugins/cursor.js';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { plugins } from '../agents/plugins/index.js';
 import { detectAgents } from '../agents/detector.js';
-import { syncClaudeToGemini } from '../sync/gemini.js';
-import { syncClaudeToCursor } from '../sync/cursor.js';
+
+// Skill storage locations
+const GLOBAL_SKILLS_DIR = join(homedir(), '.dojo', 'skills');
+const getLocalSkillsDir = (projectRoot: string) => join(projectRoot, '.dojo', 'skills');
 
 interface SyncOptions {
   force?: boolean;
+  global?: boolean;
 }
 
 interface SyncResult {
-  agent: string;
-  synced: number;
+  gathered: number;
+  distributed: number;
   skipped: number;
 }
 
+/**
+ * Three-step sync process:
+ * 1. Scan all detected agent skill directories to discover skills
+ * 2. Copy unique skills INTO .dojo/skills/ (canonical hub), avoid duplication/overwriting
+ * 3. Copy FROM .dojo/skills/ back out to each agent directory for missing skills
+ */
 export async function sync(options: SyncOptions = {}) {
   const projectRoot = process.cwd();
+  const dojoSkillsDir = options.global ? GLOBAL_SKILLS_DIR : getLocalSkillsDir(projectRoot);
 
   console.log(chalk.blue('🔄 Syncing skills...\n'));
 
-  // Check for canonical source (Claude) using plugin
-  const claudeAgent = claudePlugin.detect(projectRoot);
-  if (!claudeAgent) {
-    console.log(chalk.red(`❌ No canonical source found. Create ${claudePlugin.agentDir} first`));
-    process.exit(1);
-  }
+  const scope = options.global ? 'global' : 'local';
+  const dojoLabel = options.global ? '~/.dojo/skills' : '.dojo/skills';
+  console.log(chalk.white(`Scope: ${scope} (${dojoLabel})\n`));
 
-  // Count source skills using plugin
-  const sourceSkills = claudePlugin.listSkills(projectRoot);
-  const skillCount = sourceSkills.length;
+  // Ensure .dojo/skills exists
+  mkdirSync(dojoSkillsDir, { recursive: true });
 
-  if (skillCount === 0) {
-    console.log(chalk.yellow(`⚠️  No skills found in ${claudePlugin.agentDir}`));
+  // Detect available agents
+  const agents = detectAgents(projectRoot);
+  if (agents.length === 0) {
+    console.log(chalk.yellow('⚠️  No agent directories found'));
     return;
   }
 
-  console.log(chalk.white(`Source: ${claudePlugin.agentDir} (${skillCount} skills)\n`));
+  console.log(chalk.white(`Agents: ${agents.map(a => a.name).join(', ')}\n`));
 
-  // Detect target agents
-  const agents = detectAgents(projectRoot);
-  const results: SyncResult[] = [];
+  // ── Step 1: Scan all agent skill directories ──
+  console.log(chalk.cyan('Step 1: Scanning agent directories...\n'));
 
-  // Sync to Antigravity if detected (uses flat-md format)
-  const antigravityAgent = agents.find(a => a.name === antigravityPlugin.name);
-  if (antigravityAgent) {
-    const { synced, skipped } = syncClaudeToGemini(projectRoot, { force: options.force });
-    results.push({
-      agent: antigravityPlugin.agentDir,
-      synced: synced.length,
-      skipped: skipped.length
-    });
-    console.log(chalk.gray(`→ ${antigravityPlugin.agentDir}: ${synced.length} synced, ${skipped.length} skipped`));
+  // Collect all skills from all agents: { skillName -> { content (canonical), source agent } }
+  const discoveredSkills = new Map<string, { content: string; agent: string }>();
+
+  for (const agent of agents) {
+    const plugin = plugins.find(p => p.name === agent.name);
+    if (!plugin) continue;
+
+    const skillNames = plugin.listSkills(projectRoot);
+    for (const skillName of skillNames) {
+      if (discoveredSkills.has(skillName)) continue; // First-found wins
+
+      const skillPath = plugin.getSkillPath(projectRoot, skillName);
+      if (!existsSync(skillPath)) continue;
+
+      try {
+        const rawContent = readFileSync(skillPath, 'utf-8');
+        // Convert to canonical format using the plugin's format plugin
+        const canonicalContent = plugin.formatPlugin.toCanonical(rawContent, skillName);
+        discoveredSkills.set(skillName, { content: canonicalContent, agent: plugin.name });
+        console.log(chalk.gray(`  Found: ${skillName} (from ${plugin.displayName})`));
+      } catch {
+        // Skip unreadable files
+      }
+    }
   }
 
-  // Sync to Cursor if detected
-  const cursorAgent = agents.find(a => a.name === cursorPlugin.name);
-  if (cursorAgent) {
-    const { synced, skipped } = await syncClaudeToCursor(projectRoot, { force: options.force });
-    results.push({
-      agent: cursorPlugin.agentDir,
-      synced: synced.length,
-      skipped: skipped.length
-    });
-    console.log(chalk.gray(`→ ${cursorPlugin.agentDir}: ${synced.length} synced, ${skipped.length} skipped`));
+  if (discoveredSkills.size === 0) {
+    // Check if .dojo/skills has any skills to distribute
+    const existingCanonical = readdirSync(dojoSkillsDir)
+      .filter(f => f.endsWith('.md'))
+      .map(f => f.replace('.md', ''));
+
+    if (existingCanonical.length === 0) {
+      console.log(chalk.yellow('\n⚠️  No skills found in any agent directory or .dojo/skills'));
+      return;
+    }
+
+    console.log(chalk.gray(`  No new skills in agent directories`));
+    console.log(chalk.gray(`  ${existingCanonical.length} skill(s) already in ${dojoLabel}\n`));
+  } else {
+    console.log(chalk.gray(`  Discovered ${discoveredSkills.size} skill(s)\n`));
   }
+
+  // ── Step 2: Copy unique skills into .dojo/skills ──
+  console.log(chalk.cyan('Step 2: Gathering into .dojo/skills...\n'));
+
+  let gathered = 0;
+  let skippedGather = 0;
+
+  for (const [skillName, { content, agent }] of discoveredSkills) {
+    const canonicalPath = join(dojoSkillsDir, `${skillName}.md`);
+
+    if (existsSync(canonicalPath) && !options.force) {
+      skippedGather++;
+      console.log(chalk.gray(`  Skip: ${skillName} (already in ${dojoLabel})`));
+      continue;
+    }
+
+    writeFileSync(canonicalPath, content);
+    gathered++;
+    console.log(chalk.green(`  ← ${skillName} (from ${agent})`));
+  }
+
+  console.log(chalk.gray(`  Gathered: ${gathered}, Skipped: ${skippedGather}\n`));
+
+  // ── Step 3: Copy from .dojo/skills back out to each agent ──
+  console.log(chalk.cyan('Step 3: Distributing to agents...\n'));
+
+  // Read all canonical skills
+  const canonicalSkills = readdirSync(dojoSkillsDir)
+    .filter(f => f.endsWith('.md'))
+    .map(f => f.replace('.md', ''));
+
+  let distributed = 0;
+  let skippedDistribute = 0;
+
+  for (const agent of agents) {
+    const plugin = plugins.find(p => p.name === agent.name);
+    if (!plugin) continue;
+
+    for (const skillName of canonicalSkills) {
+      // Check if a valid (readable) copy already exists — use existsSync which
+      // returns false for broken symlinks, so stale symlinks get replaced
+      const agentSkillPath = plugin.getSkillPath(projectRoot, skillName);
+      if (existsSync(agentSkillPath) && !options.force) {
+        skippedDistribute++;
+        continue;
+      }
+
+      const canonicalPath = join(dojoSkillsDir, `${skillName}.md`);
+
+      try {
+        await plugin.installSkill({
+          projectRoot,
+          skillName,
+          canonicalPath
+        });
+        distributed++;
+        console.log(chalk.green(`  → ${skillName} → ${plugin.displayName}`));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(chalk.red(`  Failed: ${skillName} → ${plugin.displayName}: ${message}`));
+      }
+    }
+  }
+
+  console.log(chalk.gray(`  Distributed: ${distributed}, Skipped: ${skippedDistribute}\n`));
 
   // Summary
-  if (results.length === 0) {
-    console.log(chalk.yellow(`\n⚠️  No target agent directories found. Create ${antigravityPlugin.agentDir} or ${cursorPlugin.agentDir}`));
-  } else {
-    console.log(chalk.green('\n✅ Sync complete!'));
-  }
+  const result: SyncResult = {
+    gathered,
+    distributed,
+    skipped: skippedGather + skippedDistribute
+  };
+
+  console.log(chalk.green(`✅ Sync complete! Gathered ${result.gathered}, distributed ${result.distributed}, skipped ${result.skipped}`));
 }

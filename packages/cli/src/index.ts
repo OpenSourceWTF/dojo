@@ -86,14 +86,16 @@ Examples:
 
 // Sync command
 program.command('sync')
-  .description('Sync custom skills across agent formats')
+  .description('Sync skills across all agent directories via .dojo/skills hub')
   .option('-f, --force', 'Overwrite existing skills')
+  .option('-g, --global', 'Sync via global ~/.dojo/skills instead of local')
   .addHelpText('after', `
 Examples:
-  $ dojo sync                         # Sync all custom skills
+  $ dojo sync                         # Sync all skills (local .dojo/skills)
+  $ dojo sync -g                      # Sync via global ~/.dojo/skills
   $ dojo sync -f                      # Force overwrite existing
 `)
-  .action(sync);
+  .action((opts) => sync({ force: opts.force, global: opts.global }));
 
 // Unlearn command (with 'rm' alias)
 program.command('unlearn')

@@ -2,11 +2,11 @@
  * Comprehensive tests for unlearn command
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdir, rm, writeFile, symlink } from 'node:fs/promises';
+import { mkdir, rm, writeFile, copyFile, symlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { findSkillLocations, removeSkillSymlinks, unlearn } from '../src/commands/unlearn.js';
+import { findSkillLocations, removeSkillFiles, unlearn } from '../src/commands/unlearn.js';
 
 describe('unlearn command', () => {
   let tmpRoot: string;
@@ -84,85 +84,91 @@ describe('unlearn command', () => {
       const locations = findSkillLocations(tmpRoot, 'nonexistent');
       expect(locations).toEqual([]);
     });
-  });
 
-  describe('removeSkillSymlinks', () => {
-    it('should remove symlinks but not regular files', async () => {
-      // Create canonical directory
-      const canonicalDir = join(tmpRoot, '.dojo', 'skills');
-      await mkdir(canonicalDir, { recursive: true });
-      const canonicalFile = join(canonicalDir, 'test.md');
-      await writeFile(canonicalFile, '# Test');
+    it('should find broken symlinks in flat-md format', async () => {
+      const agentDir = join(tmpRoot, '.agent', 'workflows');
+      await mkdir(agentDir, { recursive: true });
+      await symlink('/non/existent/target.md', join(agentDir, 'broken-skill.md'));
 
-      // Create symlink location
-      const claudeDir = join(tmpRoot, '.claude', 'skills');
-      await mkdir(claudeDir, { recursive: true });
-      await symlink(canonicalFile, join(claudeDir, 'test.md'));
-
-      const removed = await removeSkillSymlinks([join(claudeDir, 'test.md')]);
-      expect(removed).toBe(1);
-      expect(existsSync(join(claudeDir, 'test.md'))).toBe(false);
+      const locations = findSkillLocations(tmpRoot, 'broken-skill');
+      expect(locations).toContain(join(agentDir, 'broken-skill.md'));
     });
 
-    it('should skip non-symlink files with log message', async () => {
+    it('should find directories containing broken symlinks in folder formats', async () => {
+      const claudeDir = join(tmpRoot, '.claude', 'skills', 'broken-skill');
+      await mkdir(claudeDir, { recursive: true });
+      await symlink('/non/existent/target.md', join(claudeDir, 'SKILL.md'));
+
+      const locations = findSkillLocations(tmpRoot, 'broken-skill');
+      expect(locations).toContain(claudeDir);
+    });
+  });
+
+  describe('removeSkillFiles', () => {
+    it('should remove regular files', async () => {
       const claudeDir = join(tmpRoot, '.claude', 'skills');
       await mkdir(claudeDir, { recursive: true });
       await writeFile(join(claudeDir, 'test.md'), '# Test');
 
-      const removed = await removeSkillSymlinks([join(claudeDir, 'test.md')]);
-      expect(removed).toBe(0);
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Skipping'));
+      const removed = await removeSkillFiles([join(claudeDir, 'test.md')]);
+      expect(removed).toBe(1);
+      expect(existsSync(join(claudeDir, 'test.md'))).toBe(false);
     });
 
     it('should skip non-existent locations', async () => {
-      const removed = await removeSkillSymlinks([join(tmpRoot, 'nonexistent.md')]);
+      const removed = await removeSkillFiles([join(tmpRoot, 'nonexistent.md')]);
       expect(removed).toBe(0);
     });
 
-    it('should handle directory removal when all files are symlinks', async () => {
-      // Create canonical file
-      const canonicalDir = join(tmpRoot, '.dojo', 'skills');
-      await mkdir(canonicalDir, { recursive: true });
-      const canonicalFile = join(canonicalDir, 'test.md');
-      await writeFile(canonicalFile, '# Test');
-
-      // Create directory with symlinked content
-      const skillDir = join(tmpRoot, '.cursor', 'rules', 'test');
-      await mkdir(skillDir, { recursive: true });
-      await symlink(canonicalFile, join(skillDir, 'RULE.md'));
-
-      const removed = await removeSkillSymlinks([skillDir]);
-      expect(removed).toBe(1);
-      expect(existsSync(skillDir)).toBe(false);
-    });
-
-    it('should skip directory with non-symlink files', async () => {
+    it('should remove directories recursively', async () => {
       const skillDir = join(tmpRoot, '.cursor', 'rules', 'test');
       await mkdir(skillDir, { recursive: true });
       await writeFile(join(skillDir, 'RULE.md'), '# Test');
 
-      const removed = await removeSkillSymlinks([skillDir]);
-      expect(removed).toBe(0);
-      expect(existsSync(skillDir)).toBe(true);
+      const removed = await removeSkillFiles([skillDir]);
+      expect(removed).toBe(1);
+      expect(existsSync(skillDir)).toBe(false);
+    });
+
+    it('should handle directories with multiple files', async () => {
+      const skillDir = join(tmpRoot, '.cursor', 'rules', 'test');
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(join(skillDir, 'RULE.md'), '# Test');
+      await writeFile(join(skillDir, 'extra.md'), '# Extra');
+
+      const removed = await removeSkillFiles([skillDir]);
+      expect(removed).toBe(1);
+      expect(existsSync(skillDir)).toBe(false);
+    });
+
+    it('should remove broken symlinks', async () => {
+      const agentDir = join(tmpRoot, '.agent', 'workflows');
+      await mkdir(agentDir, { recursive: true });
+      const brokenLink = join(agentDir, 'broken.md');
+      await symlink('/non/existent/target.md', brokenLink);
+
+      const removed = await removeSkillFiles([brokenLink]);
+      expect(removed).toBe(1);
+      expect(existsSync(brokenLink)).toBe(false);
     });
   });
 
   describe('unlearn function', () => {
     it('should remove skill locally (default)', async () => {
-      // Setup
-      const claudeDir = join(tmpRoot, '.claude', 'skills');
+      // Setup: create canonical file and copy to Claude directory
+      const claudeSkillDir = join(tmpRoot, '.claude', 'skills', 'test');
       const localDir = join(tmpRoot, '.dojo', 'skills');
-      await mkdir(claudeDir, { recursive: true });
+      await mkdir(claudeSkillDir, { recursive: true });
       await mkdir(localDir, { recursive: true });
 
       const canonicalFile = join(localDir, 'test.md');
       await writeFile(canonicalFile, '# Test');
-      await symlink(canonicalFile, join(claudeDir, 'test.md'));
+      await copyFile(canonicalFile, join(claudeSkillDir, 'SKILL.md'));
 
       await unlearn('test', {}, tmpRoot);
 
       expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Removing'));
-      expect(existsSync(join(claudeDir, 'test.md'))).toBe(false);
+      expect(existsSync(join(claudeSkillDir, 'SKILL.md'))).toBe(false);
       expect(existsSync(canonicalFile)).toBe(false);
     });
 
@@ -171,9 +177,9 @@ describe('unlearn command', () => {
       expect(console.log).toHaveBeenCalledWith(expect.stringContaining('globally'));
     });
 
-    it('should report no symlinks found when skill does not exist', async () => {
+    it('should report no skill files found when skill does not exist', async () => {
       await unlearn('nonexistent', {}, tmpRoot);
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No symlinks'));
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No skill files found'));
     });
   });
 
@@ -185,21 +191,20 @@ describe('unlearn command', () => {
       await writeFile(join(dojoSkillsDir, 'skill-one.md'), '# Skill One');
       await writeFile(join(dojoSkillsDir, 'skill-two.md'), '# Skill Two');
 
-      // Create agent skill directories with symlinks
+      // Create agent skill directories with copied files
       const claudeDir = join(tmpRoot, '.claude', 'skills');
-      await mkdir(claudeDir, { recursive: true });
       const skill1Dir = join(claudeDir, 'skill-one');
       const skill2Dir = join(claudeDir, 'skill-two');
       await mkdir(skill1Dir, { recursive: true });
       await mkdir(skill2Dir, { recursive: true });
-      await symlink(join(dojoSkillsDir, 'skill-one.md'), join(skill1Dir, 'SKILL.md'));
-      await symlink(join(dojoSkillsDir, 'skill-two.md'), join(skill2Dir, 'SKILL.md'));
+      await copyFile(join(dojoSkillsDir, 'skill-one.md'), join(skill1Dir, 'SKILL.md'));
+      await copyFile(join(dojoSkillsDir, 'skill-two.md'), join(skill2Dir, 'SKILL.md'));
 
       // Unlearn both
       await unlearn('skill-one', {}, tmpRoot);
       await unlearn('skill-two', {}, tmpRoot);
 
-      // Both symlinks should be gone
+      // Both skill files should be gone
       expect(existsSync(join(skill1Dir, 'SKILL.md'))).toBe(false);
       expect(existsSync(join(skill2Dir, 'SKILL.md'))).toBe(false);
     });

@@ -5,7 +5,7 @@
  */
 
 import chalk from 'chalk';
-import { existsSync, rmSync, statSync, lstatSync, readdirSync } from 'node:fs';
+import { existsSync, rmSync, lstatSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { removeMcpServer } from '../mcp/config.js';
@@ -42,7 +42,10 @@ export function findSkillLocations(projectRoot: string, skillName: string, forAg
 
     if (plugin.format === 'flat-md') {
       // Flat format: {skill}.md file
-      if (existsSync(skillPath)) {
+      // Use lstatSync to detect broken symlinks (existsSync returns false for those)
+      let flatExists = false;
+      try { lstatSync(skillPath); flatExists = true; } catch { /* doesn't exist */ }
+      if (flatExists) {
         locations.push(skillPath);
       }
     } else {
@@ -70,41 +73,26 @@ export function findSkillLocations(projectRoot: string, skillName: string, forAg
 }
 
 /**
- * Remove skill symlinks from all provided locations.
- * Only removes symlinks - actual files are preserved.
- * For directories, removes them if they only contain symlinks.
+ * Remove skill files from all provided locations.
+ * Handles both regular files and directories (for folder-based formats).
  * Returns count of removed locations.
  */
-export async function removeSkillSymlinks(locations: string[]): Promise<number> {
+export async function removeSkillFiles(locations: string[]): Promise<number> {
   let removed = 0;
 
   for (const location of locations) {
     try {
-      if (!existsSync(location)) continue;
+      // Use lstatSync instead of existsSync to detect broken symlinks
+      let lstat;
+      try { lstat = lstatSync(location); } catch { continue; }
 
-      const lstat = lstatSync(location);
 
-      if (lstat.isSymbolicLink()) {
-        // Direct symlink (e.g., .agent/workflows/skill.md)
+      if (lstat.isSymbolicLink() || lstat.isFile()) {
         rmSync(location);
         removed++;
       } else if (lstat.isDirectory()) {
-        // Directory - check if contents are symlinks
-        const files = readdirSync(location);
-        const allSymlinks = files.every(f => {
-          const fpath = join(location, f);
-          return lstatSync(fpath).isSymbolicLink();
-        });
-
-        if (allSymlinks && files.length > 0) {
-          // All contents are symlinks, safe to remove directory
-          rmSync(location, { recursive: true });
-          removed++;
-        } else {
-          console.log(chalk.gray(`   Skipping ${location} (contains non-symlink files)`));
-        }
-      } else {
-        console.log(chalk.gray(`   Skipping ${location} (not a symlink)`));
+        rmSync(location, { recursive: true });
+        removed++;
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -120,14 +108,14 @@ export async function removeSkillSymlinks(locations: string[]): Promise<number> 
  */
 function removeLocalSkillFile(projectRoot: string, skillName: string): boolean {
   const localPath = join(getLocalSkillsDir(projectRoot), `${skillName}.md`);
-  if (existsSync(localPath)) {
-    try {
-      rmSync(localPath);
-      return true;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(chalk.red(`Failed to remove local skill file: ${message}`));
-    }
+  // Use lstatSync to detect broken symlinks (existsSync returns false for those)
+  try { lstatSync(localPath); } catch { return false; }
+  try {
+    rmSync(localPath);
+    return true;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(chalk.red(`Failed to remove local skill file: ${message}`));
   }
   return false;
 }
@@ -137,14 +125,14 @@ function removeLocalSkillFile(projectRoot: string, skillName: string): boolean {
  */
 function removeGlobalSkillFile(skillName: string): boolean {
   const globalPath = join(GLOBAL_SKILLS_DIR, `${skillName}.md`);
-  if (existsSync(globalPath)) {
-    try {
-      rmSync(globalPath);
-      return true;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(chalk.red(`Failed to remove global skill file: ${message}`));
-    }
+  // Use lstatSync to detect broken symlinks (existsSync returns false for those)
+  try { lstatSync(globalPath); } catch { return false; }
+  try {
+    rmSync(globalPath);
+    return true;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(chalk.red(`Failed to remove global skill file: ${message}`));
   }
   return false;
 }
@@ -152,7 +140,7 @@ function removeGlobalSkillFile(skillName: string): boolean {
 /**
  * Unlearn (remove) a skill.
  * 
- * Without -g: Removes symlinks from agent directories AND local .dojo/skills file
+ * Without -g: Removes skill files from agent directories AND local .dojo/skills file
  * With -g: Removes from global ~/.dojo/skills (and MCP configs)
  */
 export async function unlearn(
@@ -168,20 +156,20 @@ export async function unlearn(
 
     // MCP-only mode: skip skill file removal
     if (!options.mcpMode) {
-      // Remove symlinks from project agent directories
+      // Remove skill files from project agent directories
       const locations = findSkillLocations(projectRoot, skill, options.forAgents);
-      console.log(chalk.yellow('📂 Removing symlinks:'));
+      console.log(chalk.yellow('📂 Removing skill files:'));
       if (locations.length > 0) {
-        const removedSymlinks = await removeSkillSymlinks(locations);
+        const removedCount = await removeSkillFiles(locations);
         for (const loc of locations) {
           const relative = loc.replace(projectRoot, '').replace(/^\//, '');
           console.log(chalk.red(`   ✗ ${relative}`));
         }
-        if (removedSymlinks === 0 && locations.length > 0) {
-          console.log(chalk.gray(`   (already removed or not symlinks)`));
+        if (removedCount === 0 && locations.length > 0) {
+          console.log(chalk.gray(`   (already removed)`));
         }
       } else {
-        console.log(chalk.gray(`   No symlinks found for "${skill}"`));
+        console.log(chalk.gray(`   No skill files found for "${skill}"`));
       }
 
       // Remove from global storage
@@ -214,25 +202,25 @@ export async function unlearn(
     console.log(chalk.green(`\n✅ Unlearned ${skill} globally${modeLabel}`));
 
   } else {
-    // Local unlearn: remove symlinks AND local .dojo/skills file
+    // Local unlearn: remove skill files AND local .dojo/skills file
     console.log(chalk.yellow(`🗑️  Removing "${skill}" from this project...\n`));
 
     // MCP-only mode: skip skill file removal
     if (!options.mcpMode) {
-      // Remove symlinks from agent directories
+      // Remove skill files from agent directories
       const locations = findSkillLocations(projectRoot, skill, options.forAgents);
-      console.log(chalk.yellow('📂 Removing symlinks:'));
+      console.log(chalk.yellow('📂 Removing skill files:'));
       if (locations.length > 0) {
-        const removedSymlinks = await removeSkillSymlinks(locations);
+        const removedCount = await removeSkillFiles(locations);
         for (const loc of locations) {
           const relative = loc.replace(projectRoot, '').replace(/^\//, '');
           console.log(chalk.red(`   ✗ ${relative}`));
         }
-        if (removedSymlinks === 0 && locations.length > 0) {
-          console.log(chalk.gray(`   (already removed or not symlinks)`));
+        if (removedCount === 0 && locations.length > 0) {
+          console.log(chalk.gray(`   (already removed)`));
         }
       } else {
-        console.log(chalk.gray(`   No symlinks found for "${skill}"`));
+        console.log(chalk.gray(`   No skill files found for "${skill}"`));
       }
 
       // Remove local skill file
