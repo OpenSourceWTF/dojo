@@ -11,6 +11,7 @@ import { downloadSkill } from '../download/github.js';
 import { detectAgents, getPluginByName } from '../agents/detector.js';
 import type { DetectedAgent } from '../agents/plugin.js';
 import { addMcpServersToConfig } from '../mcp/config.js';
+import { loadMergedBlacklist, checkBlacklist, formatBlockedMessage } from '../blacklist/index.js';
 import { prompt } from '../utils/prompt.js';
 import { join } from 'node:path';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
@@ -197,7 +198,17 @@ export async function learn(skill: string, options: LearnOptions = {}) {
     }
   }
 
-  // 3. Load full registry for dependency resolution
+  // 3. Check blacklist before proceeding
+  const blacklist = await loadMergedBlacklist({
+    localPath: isLocalRegistry ? options.registry : undefined,
+  });
+  const blocked = checkBlacklist(fqn, blacklist);
+  if (blocked) {
+    console.log(chalk.red(`\n🚫 ${formatBlockedMessage(fqn, blocked)}`));
+    process.exit(1);
+  }
+
+  // 4. Load full registry for dependency resolution
   const registry = await loadRegistry(registryConfig.localRegistryPath, {
     localOnly: registryConfig.localOnly,
     remoteUrl: registryConfig.remoteUrl
@@ -219,6 +230,19 @@ export async function learn(skill: string, options: LearnOptions = {}) {
 
   // 6. Resolve all dependencies
   const resolved = resolveSkill(fqn, registry);
+
+  // Check dependencies against blacklist
+  for (const r of resolved) {
+    if (r.fqn === fqn) continue; // Already checked above
+    const depBlocked = checkBlacklist(r.fqn, blacklist);
+    if (depBlocked) {
+      console.log(chalk.red(`\n🚫 Dependency "${r.fqn}" is blacklisted and cannot be installed.`));
+      console.log(chalk.red(`   Reason: ${depBlocked.reason}`));
+      console.log(chalk.yellow(`   "${fqn}" depends on this blacklisted skill.`));
+      process.exit(1);
+    }
+  }
+
   console.log(chalk.blue(`📦 Installing ${fqn}`));
 
   // Display tree

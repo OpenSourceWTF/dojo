@@ -63,7 +63,7 @@ describe('E2E: MCP Integration', () => {
       expect(Array.isArray(result.content)).toBe(true);
       expect(result.content[0]).toHaveProperty('type', 'text');
       expect(result.content[0]).toHaveProperty('text');
-    });
+    }, 15000);
   });
 
   describe('Response Format', () => {

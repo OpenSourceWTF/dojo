@@ -13,6 +13,7 @@ import { searchRegistry, loadRegistry } from '../registry/index.js';
 import { resolveSkill, detectCycle } from '../resolver/dependencies.js';
 import { downloadSkill } from '../download/github.js';
 import { detectAgents, getPluginForAgent } from '../agents/detector.js';
+import { loadMergedBlacklist, checkBlacklist, formatBlockedMessage } from '../blacklist/index.js';
 import { mkdir, writeFile, readFile, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -143,6 +144,19 @@ export async function installSkill(
     );
     const fqn = exact ? exact.fqn : results[0].fqn;
 
+    // Check blacklist before proceeding
+    const blacklist = await loadMergedBlacklist({
+      localPath: isLocalRegistry ? options.registry : undefined,
+    });
+    const blocked = checkBlacklist(fqn, blacklist);
+    if (blocked) {
+      return {
+        success: false,
+        message: formatBlockedMessage(fqn, blocked),
+        installedPaths: [],
+      };
+    }
+
     // Load full registry
     const registry = await loadRegistry(registryConfig.localRegistryPath, {
       localOnly: registryConfig.localOnly,
@@ -170,6 +184,19 @@ export async function installSkill(
 
     // Resolve dependencies
     const resolved = resolveSkill(fqn, registry);
+
+    // Check dependencies against blacklist
+    for (const r of resolved) {
+      if (r.fqn === fqn) continue; // Already checked above
+      const depBlocked = checkBlacklist(r.fqn, blacklist);
+      if (depBlocked) {
+        return {
+          success: false,
+          message: `Dependency "${r.fqn}" is blacklisted: ${depBlocked.reason}`,
+          installedPaths: [],
+        };
+      }
+    }
 
     // Detect agents
     const agents = detectAgents(projectRoot);

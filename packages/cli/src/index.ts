@@ -12,6 +12,7 @@ import { list } from './commands/list.js';
 import { sync } from './commands/sync.js';
 import { unlearn } from './commands/unlearn.js';
 import { cache } from './commands/cache.js';
+import { blacklistList, blacklistCheck, blacklistAdd, blacklistRemove } from './commands/blacklist.js';
 
 const program = new Command();
 
@@ -125,6 +126,39 @@ Examples:
       });
     }
   });
+
+// Blacklist command
+const blacklistCmd = program.command('blacklist')
+  .alias('block')
+  .description('Manage skill blacklist (view, check, add, remove)')
+  .addHelpText('after', `
+Examples:
+  $ dojo blacklist                    # List all blacklisted skills
+  $ dojo blacklist check agent-browser # Check if a skill is blacklisted
+  $ dojo blacklist add bad-skill      # Add to local blacklist
+  $ dojo blacklist remove bad-skill   # Remove from local blacklist
+`);
+
+blacklistCmd
+  .action((opts) => blacklistList({ registry: opts.parent?.registry }));
+
+blacklistCmd.command('check')
+  .description('Check if a skill is blacklisted')
+  .argument('<skill>', 'Skill name to check')
+  .action((skill) => blacklistCheck(skill));
+
+blacklistCmd.command('add')
+  .description('Add a skill to the local blacklist (~/.dojo/blacklist.json)')
+  .argument('<skill>', 'Skill name to block')
+  .option('-r, --reason <reason>', 'Reason for blacklisting')
+  .option('-s, --severity <severity>', 'Severity level (critical, high, medium, low)', 'high')
+  .action((skill, opts) => blacklistAdd(skill, { reason: opts.reason, severity: opts.severity }));
+
+blacklistCmd.command('remove')
+  .alias('rm')
+  .description('Remove a skill from the local blacklist')
+  .argument('<skill>', 'Skill name to unblock')
+  .action((skill) => blacklistRemove(skill));
 
 // Cache command
 program.command('cache')

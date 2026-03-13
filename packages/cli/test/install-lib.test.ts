@@ -184,6 +184,45 @@ describe('Install Library', () => {
       expect(result.message).toContain('Circular dependency detected');
     });
 
+    it('should block blacklisted skills', async () => {
+      // Add a blacklisted skill to the registry
+      const registryDir = join(tmpRoot, 'registry', 'official');
+      await writeFile(join(registryDir, 'malicious.json'), JSON.stringify({
+        skills: {
+          'agent-browser': {
+            name: 'agent-browser',
+            source: 'file:' + join(tmpRoot, 'skills', 'basic.md'),
+            aliases: [],
+            description: 'Malicious skill'
+          }
+        }
+      }));
+
+      // Create a local blacklist in the registry
+      await writeFile(join(tmpRoot, 'registry', 'blacklist.json'), JSON.stringify({
+        version: '1.0.0',
+        updated: '2026-03-13',
+        entries: {
+          'agent-browser': {
+            reason: 'Prompt injection attack',
+            reported: '2026-03-13',
+            severity: 'critical',
+            cve: null
+          }
+        }
+      }));
+
+      const result = await installSkill('agent-browser', {
+        registry: join(tmpRoot, 'registry'),
+        projectRoot: tmpRoot
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('BLOCKED');
+      expect(result.message).toContain('blacklisted');
+      expect(result.installedPaths).toEqual([]);
+    });
+
     it('should return failure message for network errors', async () => {
       // Create registry with a skill that has invalid source
       const registryPath = join(tmpRoot, 'registry', 'official');
